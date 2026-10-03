@@ -5,6 +5,7 @@ use axum::body::Body;
 use axum::http::{Method, StatusCode};
 use lemonfiber_sidecar::gate::{File, Outcome, Record};
 use serde_json::json;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::{answers_ok, healthy, routes, serve};
@@ -168,6 +169,38 @@ async fn an_upstream_that_does_not_answer_is_a_bad_gateway() {
     assert_eq!(read.status, StatusCode::BAD_GATEWAY);
     assert_eq!(checked.status, StatusCode::BAD_GATEWAY);
     assert!(config.recorded().is_empty());
+}
+
+#[tokio::test]
+async fn an_upstream_that_goes_away_after_saying_its_version_is_a_bad_gateway() {
+    let Ok(listener) = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await else {
+        return;
+    };
+    let address = listener
+        .local_addr()
+        .map(|at| format!("http://{at}"))
+        .unwrap_or_default();
+    tokio::spawn(async move {
+        if let Ok((mut stream, _)) = listener.accept().await {
+            let mut asked = [0u8; 1024];
+            let _ = stream.read(&mut asked).await;
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .await;
+        }
+    });
+    let config = Config::new("gone-after-version").with_routes(&address);
+
+    let answered = ask(
+        config.service(),
+        Method::GET,
+        &format!("/sonarr/api/v3/tag?apikey={TOKEN}"),
+        &[],
+        Body::empty(),
+    )
+    .await;
+
+    assert_eq!(answered.status, StatusCode::BAD_GATEWAY);
 }
 
 #[tokio::test]

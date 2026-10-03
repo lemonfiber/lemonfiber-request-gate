@@ -17,6 +17,7 @@ use crate::asked::Asked;
 use crate::files::Files;
 use crate::settings::Settings;
 use crate::upstream::{passed, Plan, Reach, Stop};
+use crate::version::Versions;
 use crate::{arr, jellyfin};
 
 /// The path the image's health check asks.
@@ -26,10 +27,12 @@ const HEALTH: &str = "/health";
 /// carries, and a bound on what one call can make it hold.
 const BODY: usize = 1024 * 1024;
 
-/// What every call is answered with: the files and the client.
+/// What every call is answered with: the files, the client, and what each upstream
+/// answered when asked its version.
 pub(crate) struct Service {
     files: Files,
     client: reqwest::Client,
+    versions: Versions,
 }
 
 impl Service {
@@ -38,6 +41,7 @@ impl Service {
         Arc::new(Self {
             files: Files::new(settings.config),
             client,
+            versions: Versions::default(),
         })
     }
 }
@@ -87,8 +91,9 @@ enum Listed {
 /// The answer to one call.
 ///
 /// A call not on its route's list is refused with `403`, sent nowhere, and recorded.
-/// One on the list without the route's token is answered `401`. Every other is built by
-/// the gate and sent, and a removal is recorded before it is.
+/// One on the list without the route's token is answered `401`. One on a route whose
+/// upstream runs a version the gate does not forward to is answered `503`. Every other
+/// is built by the gate and sent, and a removal is recorded before it is.
 async fn answer(State(service): State<Arc<Service>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     if parts.method == Method::GET && parts.uri.path() == HEALTH {
@@ -131,6 +136,9 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
         client: &service.client,
         upstream,
     };
+    if let Err(answer) = service.versions.supported(&reach).await {
+        return answer;
+    }
     let plan = match listed {
         Listed::Arr(call) => call.plan(&reach, &asked).await,
         Listed::Jellyfin(call) => call.plan(&reach, &asked).await,

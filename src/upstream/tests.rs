@@ -10,6 +10,7 @@ fn route(address: &str) -> Upstream {
         kind: Kind::Sonarr,
         address: address.to_owned(),
         credential: Credential::new("key"),
+        majors: Vec::new(),
     }
 }
 

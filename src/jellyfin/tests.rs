@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use crate::fake::{
     ask, body, json, raw, status, upstream, Answer, Answered, Config, Fake, JELLYFIN_TOKEN, KEY,
-    RADARR_TOKEN,
+    RADARR_TOKEN, VERSION,
 };
 
 /// The device the request service signs its owner in on, as it sends it.
@@ -75,7 +75,7 @@ async fn the_servers_name_and_an_avatar_go_upstream_with_no_credential() {
             json(
                 Method::GET,
                 "/System/Info/Public",
-                &json!({ "ServerName": "home" }),
+                &json!({ "ServerName": "home", "Version": VERSION }),
             ),
             raw(
                 Method::GET,
@@ -113,7 +113,10 @@ async fn the_servers_name_and_an_avatar_go_upstream_with_no_credential() {
     let checked = call(&config, Method::HEAD, "/UserImage?UserId=4f2a", None, None).await;
     let bare = call(&config, Method::GET, "/UserImage", None, None).await;
 
-    assert_eq!(name.json(), json!({ "ServerName": "home" }));
+    assert_eq!(
+        name.json(),
+        json!({ "ServerName": "home", "Version": VERSION })
+    );
     assert_eq!(avatar.body, "png");
     for header in ["content-type", "etag", "last-modified"] {
         assert!(avatar.headers.contains_key(header), "{header}");
@@ -126,9 +129,12 @@ async fn the_servers_name_and_an_avatar_go_upstream_with_no_credential() {
         seen.iter()
             .map(|one| one.query.as_deref())
             .collect::<Vec<_>>(),
-        [None, Some("UserId=4f2a-9C"), Some("UserId=4f2a"), None]
+        [Some("UserId=4f2a-9C"), Some("UserId=4f2a"), None]
     );
-    assert!(seen.iter().all(|one| one.header("authorization").is_none()));
+    assert!(fake
+        .all()
+        .iter()
+        .all(|one| one.header("authorization").is_none()));
 }
 
 #[tokio::test]
