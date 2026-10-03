@@ -18,7 +18,7 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 base64 = "0.22"
 # The formats the core writes into this service's configuration directory, from the
 # core at the commit the train releases this build with.
-lemonfiber-sidecar = { git = "https://github.com/lemonfiber/lemonfiber", rev = "e9dfd9f2fb93de655b5fd278f8f0723e088bc887" }
+lemonfiber-sidecar = { git = "https://github.com/lemonfiber/lemonfiber", rev = "6577d8c68dabd76373e12f03936be96634091d08" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
 ring = "0.17"
 serde_json = "1"

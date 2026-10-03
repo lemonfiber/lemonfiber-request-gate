@@ -141,7 +141,7 @@ impl Call {
     pub(crate) async fn plan(self, reach: &Reach<'_>, asked: &Asked) -> Result<Plan, Stop> {
         let query = &asked.query;
         let plan = match self {
-            Self::Status => Plan::Forward(api(reach, Method::GET, "/system/status")?),
+            Self::Status => Plan::Forward(status(reach)?),
             Self::QualityProfiles => {
                 Plan::Forward(api(reach, Method::GET, path::QUALITY_PROFILES)?)
             }
@@ -195,6 +195,12 @@ impl Call {
         };
         Ok(plan)
     }
+}
+
+/// `GET /system/status` under the API, carrying the route's key: what the gate also
+/// asks to learn whether the \*arr speaks that API.
+pub(crate) fn status(reach: &Reach<'_>) -> Result<Built, Stop> {
+    api(reach, Method::GET, "/system/status")
 }
 
 /// `method` on `path` under the API, carrying the route's key.

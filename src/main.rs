@@ -14,6 +14,7 @@ mod serving;
 mod settings;
 mod shape;
 mod upstream;
+mod version;
 
 use std::net::SocketAddr;
 use std::process::ExitCode;

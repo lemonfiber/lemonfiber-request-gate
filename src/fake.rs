@@ -34,6 +34,12 @@ pub(crate) const JELLYFIN_TOKEN: &str = "the-jellyfin-token";
 /// The key the gate holds for each upstream.
 pub(crate) const KEY: &str = "the-upstream-key";
 
+/// The media server major every test route supports.
+pub(crate) const MAJOR: u32 = 10;
+
+/// The version an upstream reports unless a test says otherwise.
+pub(crate) const VERSION: &str = "10.11.11";
+
 /// A configuration directory of its own, removed when dropped.
 pub(crate) struct Config(PathBuf);
 
@@ -70,6 +76,11 @@ impl Config {
             kind,
             address: address.to_owned(),
             credential: Credential::new(KEY),
+            majors: if kind == Kind::Jellyfin {
+                vec![MAJOR]
+            } else {
+                Vec::new()
+            },
         };
         let upstreams = Upstreams::of(vec![
             route("sonarr", Kind::Sonarr),
@@ -196,6 +207,9 @@ pub(crate) fn raw(
     }
 }
 
+/// The paths the gate asks an upstream's version on.
+const PROBES: [&str; 2] = ["/api/v3/system/status", "/System/Info/Public"];
+
 /// An upstream standing, and what it was sent.
 #[derive(Clone)]
 pub(crate) struct Fake {
@@ -205,24 +219,43 @@ pub(crate) struct Fake {
 
 impl Fake {
     /// Everything it was sent, in order.
-    pub(crate) fn seen(&self) -> Vec<Seen> {
+    pub(crate) fn all(&self) -> Vec<Seen> {
         self.seen
             .lock()
             .map(|seen| seen.clone())
             .unwrap_or_default()
     }
 
-    /// What it was sent with `method` on `path`.
+    /// Everything it was sent but the gate asking its version, in order.
+    pub(crate) fn seen(&self) -> Vec<Seen> {
+        self.all()
+            .into_iter()
+            .filter(|seen| !(seen.method == "GET" && PROBES.contains(&seen.path.as_str())))
+            .collect()
+    }
+
+    /// What it was sent with `method` on `path`, the gate asking its version included.
     pub(crate) fn sent(&self, method: &str, path: &str) -> Vec<Seen> {
-        self.seen()
+        self.all()
             .into_iter()
             .filter(|seen| seen.method == method && seen.path == path)
             .collect()
     }
 }
 
-/// An upstream answering `answers`, and `404` to anything else.
-pub(crate) async fn upstream(answers: Vec<Answer>) -> Fake {
+/// An upstream answering `answers`; then, where they do not say, its version as a
+/// supported \*arr and media server; and `404` to anything else.
+pub(crate) async fn upstream(mut answers: Vec<Answer>) -> Fake {
+    answers.push(json(
+        Method::GET,
+        "/api/v3/system/status",
+        &serde_json::json!({ "version": "4.0.0" }),
+    ));
+    answers.push(json(
+        Method::GET,
+        "/System/Info/Public",
+        &serde_json::json!({ "Version": VERSION, "ServerName": "home" }),
+    ));
     let seen = Arc::new(Mutex::new(Vec::new()));
     let state = (Arc::new(answers), Arc::clone(&seen));
     let app = Router::new().fallback(answered).with_state(state);

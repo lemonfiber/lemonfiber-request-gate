@@ -167,7 +167,7 @@ impl Call {
     pub(crate) async fn plan(self, reach: &Reach<'_>, asked: &Asked) -> Result<Plan, Stop> {
         let query = &asked.query;
         let plan = match self {
-            Self::PublicInfo => Plan::Forward(Built::new(Method::GET, "/System/Info/Public")),
+            Self::PublicInfo => Plan::Forward(public_info()),
             Self::Avatar => {
                 Plan::Forward(Built::new(asked.method.clone(), "/UserImage").query(avatar(asked)?))
             }
@@ -238,6 +238,12 @@ impl Call {
         };
         Ok(plan)
     }
+}
+
+/// `GET /System/Info/Public`, with no credential: the server's name and version, which
+/// the gate also asks to learn whether it forwards to that version.
+pub(crate) fn public_info() -> Built {
+    Built::new(Method::GET, "/System/Info/Public")
 }
 
 /// `method` on `path`, under the gate's own key.

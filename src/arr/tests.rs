@@ -146,7 +146,7 @@ async fn every_read_goes_upstream_under_the_routes_key_with_only_its_named_param
                 .and_then(|value| value.to_str().ok()),
             Some("application/json")
         );
-        let seen = fake.seen().pop();
+        let seen = fake.all().pop();
         assert_eq!(
             seen.as_ref().map(|one| one.path.as_str()),
             Some(upstream_path)
@@ -1007,14 +1007,14 @@ async fn a_series_is_never_unmonitored_and_seasons_it_lacks_change_nothing() {
 async fn the_request_services_headers_stay_behind() {
     let (config, fake) = gate(
         "headers",
-        vec![json(Method::GET, "/api/v3/system/status", &json!({}))],
+        vec![json(Method::GET, "/api/v3/tag", &json!({}))],
     )
     .await;
 
     let answered = ask(
         config.service(),
         Method::GET,
-        &format!("/sonarr/api/v3/system/status?apikey={TOKEN}"),
+        &format!("/sonarr/api/v3/tag?apikey={TOKEN}"),
         &[
             ("x-api-key", TOKEN),
             ("authorization", "Basic YWRtaW46YWRtaW4="),
@@ -1026,7 +1026,7 @@ async fn the_request_services_headers_stay_behind() {
     .await;
 
     assert_eq!(answered.status, StatusCode::OK);
-    let sent = only(&fake, "GET", "/api/v3/system/status");
+    let sent = only(&fake, "GET", "/api/v3/tag");
     assert_eq!(sent.header("x-api-key"), Some(KEY));
     for header in ["authorization", "cookie", "x-forwarded-for"] {
         assert_eq!(sent.header(header), None, "{header}");

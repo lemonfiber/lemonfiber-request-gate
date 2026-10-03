@@ -437,7 +437,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-sidecar"
 version = "0.16.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=e9dfd9f2fb93de655b5fd278f8f0723e088bc887#e9dfd9f2fb93de655b5fd278f8f0723e088bc887"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=6577d8c68dabd76373e12f03936be96634091d08#6577d8c68dabd76373e12f03936be96634091d08"
 dependencies = [
  "ring",
  "serde",
