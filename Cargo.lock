@@ -424,8 +424,10 @@ name = "lemonfiber-request-gate"
 version = "0.17.0"
 dependencies = [
  "axum",
+ "base64",
  "lemonfiber-sidecar",
  "reqwest",
+ "ring",
  "serde_json",
  "tokio",
  "tower",

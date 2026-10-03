@@ -69,25 +69,6 @@ async fn a_route_the_core_did_not_write_is_refused_and_recorded() {
 }
 
 #[tokio::test]
-async fn every_call_on_the_media_servers_route_is_refused_and_recorded() {
-    let fake = upstream(Vec::new()).await;
-    let config = Config::new("media-server").with_routes(&fake.address);
-
-    let answered = ask(
-        config.service(),
-        Method::GET,
-        "/jellyfin/System/Info/Public",
-        &[],
-        Body::empty(),
-    )
-    .await;
-
-    assert_eq!(answered.status, StatusCode::FORBIDDEN);
-    assert_eq!(config.recorded(), ["GET /jellyfin/System/Info/Public"]);
-    assert!(fake.seen().is_empty());
-}
-
-#[tokio::test]
 async fn a_refusal_is_recorded_without_its_query_string_and_its_token() {
     let fake = upstream(Vec::new()).await;
     let config = Config::new("refused").with_routes(&fake.address);

@@ -9,6 +9,7 @@ mod asked;
 #[cfg(test)]
 mod fake;
 mod files;
+mod jellyfin;
 mod serving;
 mod settings;
 mod shape;

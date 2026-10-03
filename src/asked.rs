@@ -5,7 +5,7 @@
 //! request from them.
 
 use axum::body::Bytes;
-use axum::http::{Method, Uri};
+use axum::http::{header, HeaderMap, Method, Uri};
 
 /// One call, as the request service made it.
 #[derive(Debug, Clone)]
@@ -21,13 +21,15 @@ pub(crate) struct Asked {
     pub(crate) segments: Vec<String>,
     /// Its query parameters.
     pub(crate) query: Query,
+    /// The fields of its `Authorization: MediaBrowser …` header.
+    pub(crate) authorisation: Fields,
     /// Its body, where it was no larger than the gate reads.
     pub(crate) body: Option<Bytes>,
 }
 
 impl Asked {
-    /// The call `method` made to `uri` with `body`.
-    pub(crate) fn new(method: Method, uri: &Uri, body: Option<Bytes>) -> Self {
+    /// The call `method` made to `uri` with `headers` and `body`.
+    pub(crate) fn new(method: Method, uri: &Uri, headers: &HeaderMap, body: Option<Bytes>) -> Self {
         let path = uri.path().to_owned();
         let mut segments = path.split('/').skip(1);
         let route = segments.next().unwrap_or_default().to_owned();
@@ -36,6 +38,11 @@ impl Asked {
             route,
             segments: segments.map(str::to_ascii_lowercase).collect(),
             query: Query::parse(uri.query()),
+            authorisation: Fields::of(
+                headers
+                    .get(header::AUTHORIZATION)
+                    .and_then(|value| value.to_str().ok()),
+            ),
             body,
             path,
         }
@@ -78,6 +85,45 @@ impl Query {
             Some(_) => Err(Twice),
             None => Ok(first),
         }
+    }
+}
+
+/// The `key="value"` fields of a `MediaBrowser` authorisation header.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Fields(Vec<(String, String)>);
+
+/// How the header's scheme is spelled.
+pub(crate) const SCHEME: &str = "MediaBrowser ";
+
+impl Fields {
+    /// The fields of `header`, where it is in the `MediaBrowser` scheme.
+    fn of(header: Option<&str>) -> Self {
+        let fields = header
+            .and_then(|value| {
+                value
+                    .get(..SCHEME.len())
+                    .filter(|scheme| scheme.eq_ignore_ascii_case(SCHEME))
+                    .and_then(|_| value.get(SCHEME.len()..))
+            })
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|field| {
+                let (key, value) = field.split_once('=')?;
+                Some((
+                    key.trim().to_owned(),
+                    value.trim().trim_matches('"').to_owned(),
+                ))
+            })
+            .collect();
+        Self(fields)
+    }
+
+    /// The field `name`, matched without regard to case.
+    pub(crate) fn get(&self, name: &str) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
     }
 }
 

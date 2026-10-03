@@ -13,11 +13,11 @@ use lemonfiber_sidecar::gate::{Kind, Outcome};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::arr;
 use crate::asked::Asked;
 use crate::files::Files;
 use crate::settings::Settings;
 use crate::upstream::{passed, Plan, Reach, Stop};
+use crate::{arr, jellyfin};
 
 /// The path the image's health check asks.
 const HEALTH: &str = "/health";
@@ -76,6 +76,14 @@ pub(crate) async fn serve(
         .map_or(ExitCode::FAILURE, |()| ExitCode::SUCCESS)
 }
 
+/// One call on a route, from the request service.
+enum Listed {
+    /// On a Sonarr or Radarr route.
+    Arr(arr::Call),
+    /// On the Jellyfin route.
+    Jellyfin(jellyfin::Call),
+}
+
 /// The answer to one call.
 ///
 /// A call not on its route's list is refused with `403`, sent nowhere, and recorded.
@@ -86,7 +94,12 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
     if parts.method == Method::GET && parts.uri.path() == HEALTH {
         return StatusCode::OK.into_response();
     }
-    let asked = Asked::new(parts.method, &parts.uri, to_bytes(body, BODY).await.ok());
+    let asked = Asked::new(
+        parts.method,
+        &parts.uri,
+        &parts.headers,
+        to_bytes(body, BODY).await.ok(),
+    );
 
     let Some(upstreams) = service.files.upstreams().await else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -95,23 +108,34 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
         return refused(&service, &asked).await;
     };
     let listed = match upstream.kind {
-        Kind::Sonarr | Kind::Radarr => arr::listed(upstream.kind, &asked),
-        Kind::Jellyfin => None,
+        Kind::Sonarr | Kind::Radarr => arr::listed(upstream.kind, &asked).map(Listed::Arr),
+        Kind::Jellyfin => jellyfin::listed(&asked).map(Listed::Jellyfin),
     };
-    let Some(call) = listed else {
+    let Some(listed) = listed else {
         return refused(&service, &asked).await;
     };
 
-    let token = asked.query.one(arr::TOKEN).ok().flatten();
-    if !service.files.accepts(&upstream.route, token).await {
-        return StatusCode::UNAUTHORIZED.into_response();
+    let token = match &listed {
+        Listed::Arr(_) => Some(asked.query.one(arr::TOKEN).ok().flatten()),
+        Listed::Jellyfin(call) => call
+            .needs_token()
+            .then(|| asked.authorisation.get(jellyfin::TOKEN)),
+    };
+    if let Some(token) = token {
+        if !service.files.accepts(&upstream.route, token).await {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
     }
 
     let reach = Reach {
         client: &service.client,
         upstream,
     };
-    match call.plan(&reach, &asked).await {
+    let plan = match listed {
+        Listed::Arr(call) => call.plan(&reach, &asked).await,
+        Listed::Jellyfin(call) => call.plan(&reach, &asked).await,
+    };
+    match plan {
         Ok(Plan::Forward(built)) => sent(reach.send(built).await),
         Ok(Plan::Remove(built)) => {
             let recorded = service
@@ -129,6 +153,7 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
             }
             sent(reach.send(built).await)
         }
+        Ok(Plan::Answer(response)) => response,
         Err(stop) => stopped(&service, &asked, stop).await,
     }
 }
