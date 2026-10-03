@@ -1,9 +1,9 @@
 # The request gate's image: built from this repository, distroless, non-root.
 #
 # The build stage compiles a static binary for the platform being built; the image
-# holds that binary and nothing else, with no shell and no package manager
-# (ADR-0033 §2). Its health check is the binary asking itself, since the image has
-# no HTTP client to ask with.
+# holds that binary and nothing else, with no shell and no package manager. Its
+# health check is the binary asking itself, since the image has no HTTP client to
+# ask with.
 
 FROM rust:1.97.1-alpine3.22@sha256:df4efa4e0cdfb5245fa06e3f431387b2bcc96782ce5681b7fb6b0297d745bc29 AS build
 RUN apk add --no-cache musl-dev
