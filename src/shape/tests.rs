@@ -30,6 +30,7 @@ fn a_parameter_is_kept_in_its_shape_and_spelled_as_it_is_sent_upstream() {
         let query = crate::asked::Asked::new(
             axum::http::Method::GET,
             &format!("/r?p={text}").parse().unwrap_or_default(),
+            &axum::http::HeaderMap::new(),
             None,
         )
         .query;

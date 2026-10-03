@@ -60,6 +60,8 @@ pub(crate) enum Plan {
     Forward(Built),
     /// Record this removal, then send it and hand back what the upstream answers.
     Remove(Built),
+    /// Answer with this, sending nothing further.
+    Answer(Response),
 }
 
 /// Why the gate stopped short of sending a call.
