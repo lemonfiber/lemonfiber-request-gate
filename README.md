@@ -54,6 +54,7 @@ commit pinned in [`Cargo.toml`](Cargo.toml), so it needs network access the firs
 
 ```sh
 cargo test
+cargo clippy --all-targets --locked -- -D warnings
 docker build -t request-gate .
 ```
 
