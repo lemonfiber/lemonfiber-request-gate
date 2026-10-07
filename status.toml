@@ -1,0 +1,22 @@
+# What this repository implements, one row per requirement (OPS-R74).
+#
+# `done` means the requirement is met in full by what is here, `partial` that this
+# repository holds its part and the rest lives elsewhere, `open` that nothing here
+# meets it yet. The release gate and the no-stubs gate read this file; a pull
+# request that changes whether a requirement is met changes its row.
+#
+# The stack's side of the containment (no published port, the two internal
+# networks, no data mount, a read-only root, no capabilities) is the compose entry
+# lemonfiber-media-stack keeps; minting and rotating the tokens, registering the
+# gate with the request service, and the doctor check that reads the record are
+# the core's.
+
+requirement = [
+  { id = "C6-R20", state = "partial", evidence = ["src/arr.rs", "src/jellyfin.rs", "src/arr/tests/forwarding.rs::a_call_off_the_list_or_on_the_other_arrs_route_is_refused"] },
+  { id = "C6-R22", state = "partial", evidence = ["Dockerfile", "src/main.rs"] },
+  { id = "C6-R23", state = "done", evidence = ["src/arr.rs", "src/arr/written.rs", "src/jellyfin.rs", "src/arr/tests/forwarding.rs::a_call_off_the_list_or_on_the_other_arrs_route_is_refused", "src/arr/tests/changes.rs::a_removal_carries_the_id_and_its_two_flags_and_nothing_else", "src/jellyfin/tests.rs::a_sign_in_on_a_device_the_request_service_does_not_assign_is_refused"] },
+  { id = "C6-R24", state = "partial", evidence = ["src/files.rs", "src/files/tests.rs::a_route_accepts_its_token_and_no_call_without_one"] },
+  { id = "C6-R25", state = "partial", evidence = ["src/files.rs", "src/files/tests.rs::each_entry_is_added_after_the_last"] },
+  { id = "D1-R12", state = "partial", evidence = ["src/version.rs", "src/version/tests.rs"] },
+  { id = "D1-R19", state = "partial", evidence = ["src/serving.rs", "src/jellyfin/tests.rs::the_servers_name_and_an_avatar_go_upstream_with_no_credential"] },
+]
