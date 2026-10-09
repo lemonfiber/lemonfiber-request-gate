@@ -7,6 +7,7 @@ yanked = "deny"
 # remove itself: the older copy belongs to a dependency, and the reason names which.
 multiple-versions = "deny"
 skip = [
+  { crate = "base64@0.22", reason = "hyper-util, under axum and reqwest, is on the 0.22 line" },
   { crate = "windows-sys@0.52", reason = "ring and errno, under tokio, are on the 0.52 line" },
 ]
 # Two families are refused as dependencies rather than merely avoided as a habit,
