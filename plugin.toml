@@ -1,0 +1,38 @@
+schema_version = 1
+
+[plugin]
+id          = "request-gate"
+name        = "Request gate"
+version     = "0.17.0"
+description = "Stands between Seerr and Sonarr, Radarr and Jellyfin, so Seerr holds none of their keys"
+without_it  = "Seerr cannot reach Sonarr, Radarr or Jellyfin: requests are not sent, and members cannot sign in to Seerr"
+upstream    = "https://github.com/lemonfiber/lemonfiber-request-gate"
+license     = "Hippocratic-3.0"
+forms       = ["library", "full"]
+
+[[service]]
+id            = "request-gate"
+name          = "Request gate"
+image         = "ghcr.io/lemonfiber/request-gate"
+digest        = "sha256:c6112104ee34c5844ff6af9a88fa47876a2473587160b55f99b4cb5c96e3de57"
+tag           = "main-f5051fba69d7"
+health        = { kind = "container" }
+criticality   = "important"
+memory_mib    = 32
+mem_limit_mib = 64
+reaches       = ""
+asks_for      = "Nothing beyond this machine. It answers only Seerr, and makes the calls Seerr's requests, scans and sign-ins need of Sonarr, Radarr and Jellyfin, over networks it shares with them alone."
+posture       = "confined"
+replaces      = "request-gate"
+
+[[proof]]
+id      = "request-gate.names-itself"
+title   = "The gate's own program says which gate it is"
+fixture = "recordings/request-gate/names-itself.json"
+why     = """
+The gate publishes no port and answers only Seerr, over a network it shares with
+nobody else, so it is proved live by running its own program: the pinned image
+prints its name and version and exits cleanly.
+"""
+run     = { args = ["version"] }
+expect  = { exit = 0, stdout_starts_with = "request-gate " }
