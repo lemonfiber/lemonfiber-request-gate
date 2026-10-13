@@ -1,0 +1,8 @@
+{
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:c6112104ee34c5844ff6af9a88fa47876a2473587160b55f99b4cb5c96e3de57",
+  "note": "",
+  "run": {
+    "args": ["version"]
+  },
+  "result": {"exit": 0, "stdout_starts_with": "request-gate 0.17.0\n"}
+}
