@@ -15,7 +15,7 @@ id            = "request-gate"
 name          = "Request gate"
 image         = "ghcr.io/lemonfiber/request-gate"
 digest        = "sha256:ff9fd54257cc815be3a438900902aacf8a2c3018ef0e52693d47bb579014876d"
-tag           = "v0.17.0"
+tag           = "0.17.0"
 health        = { kind = "container" }
 criticality   = "important"
 memory_mib    = 32
