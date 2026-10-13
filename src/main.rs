@@ -46,8 +46,12 @@ async fn main() -> ExitCode {
             serving::serve(LISTEN, service, stopped).await
         }
         Some("health") => serving::healthy(LISTEN.port()).await,
+        Some("version") => {
+            println!("request-gate {}", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        }
         Some(other) => {
-            eprintln!("request-gate: no command called {other}; run it bare to serve, or `health` to ask whether it is serving");
+            eprintln!("request-gate: no command called {other}; run it bare to serve, `health` to ask whether it is serving, or `version` to print its version");
             ExitCode::from(2)
         }
     }

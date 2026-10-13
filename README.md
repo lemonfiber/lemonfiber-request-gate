@@ -38,6 +38,7 @@ The list of calls is in [`src/arr.rs`](src/arr.rs) (Sonarr and Radarr) and
 | Configuration | `/config`, which `lemonfiber` fills: `upstreams.json` (where each upstream is, and its key), `tokens.json` (hashes of the tokens Seerr may present) and `record.json` (the refusals and removals, written by the gate) |
 | Settings | `LEMONFIBER_REQUEST_GATE_CONFIG` moves the configuration directory; nothing else is configurable |
 | Health check | `request-gate health`, which asks the running gate over loopback |
+| Version | `request-gate version`, which prints `request-gate` and its version to standard output |
 | Container | Distroless base, non-root user, read-only root filesystem, no kernel capabilities |
 
 The compose entry and its networks are in
