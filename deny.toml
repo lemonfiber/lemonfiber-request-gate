@@ -8,6 +8,7 @@ yanked = "deny"
 multiple-versions = "deny"
 skip = [
   { crate = "windows-sys@0.52", reason = "ring and errno, under tokio, are on the 0.52 line" },
+  { crate = "base64@0.22", reason = "hyper-util, under axum and reqwest, is on the 0.22 line" },
 ]
 # Two families are refused as dependencies rather than merely avoided as a habit,
 # and both are stems: a family is published under one prefix, and banning the one
