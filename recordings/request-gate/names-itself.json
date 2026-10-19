@@ -1,5 +1,5 @@
 {
-  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:c6112104ee34c5844ff6af9a88fa47876a2473587160b55f99b4cb5c96e3de57",
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:26f6eed2aded7ca8174879ef6826893abc38076e6aa50fe6f29f50246929c845",
   "note": "",
   "run": {
     "args": ["version"]
