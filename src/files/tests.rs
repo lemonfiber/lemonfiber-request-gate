@@ -1,6 +1,6 @@
 use lemonfiber_sidecar::gate::{File, Outcome, Record};
 
-use super::Files;
+use super::{Files, Routes};
 use crate::fake::{Config, TOKEN};
 
 #[tokio::test]
@@ -8,7 +8,7 @@ async fn nothing_is_read_from_files_the_core_has_not_written() {
     let config = Config::new("unwritten");
     let files = Files::new(config.path());
 
-    assert!(files.upstreams().await.is_none());
+    assert!(matches!(files.upstreams().await, Routes::Unwritten));
     assert!(!files.accepts("sonarr", Some(TOKEN)).await);
 }
 
@@ -20,10 +20,10 @@ async fn a_route_accepts_its_token_and_no_call_without_one() {
     assert!(files.accepts("sonarr", Some(TOKEN)).await);
     assert!(!files.accepts("sonarr", Some("another")).await);
     assert!(!files.accepts("sonarr", None).await);
-    assert!(files
-        .upstreams()
-        .await
-        .is_some_and(|upstreams| upstreams.route("radarr").is_some()));
+    assert!(matches!(
+        files.upstreams().await,
+        Routes::Written(upstreams) if upstreams.route("radarr").is_some()
+    ));
 }
 
 #[tokio::test]
@@ -92,4 +92,19 @@ async fn a_record_that_cannot_be_written_says_so() {
             .record("sonarr", "GET", "/sonarr/x", Outcome::Refused)
             .await
     );
+}
+
+#[tokio::test]
+async fn routes_that_are_there_and_cannot_be_read_are_unreadable() {
+    let config = Config::new("unreadable-routes");
+    let files = Files::new(config.path());
+    let _ = std::fs::create_dir_all(config.path().join(File::Upstreams.name()));
+    assert!(matches!(files.upstreams().await, Routes::Unreadable));
+
+    let config = Config::new("unparsed-routes");
+    config.write(File::Upstreams, "not the routes");
+    assert!(matches!(
+        Files::new(config.path()).upstreams().await,
+        Routes::Unreadable
+    ));
 }
