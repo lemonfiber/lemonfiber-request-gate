@@ -22,8 +22,24 @@ async fn health_answers_ok_with_nothing_written() {
 }
 
 #[tokio::test]
-async fn nothing_is_answered_until_the_core_has_written_the_routes() {
+async fn every_call_is_refused_until_the_core_has_written_the_routes() {
     let config = Config::new("unwritten");
+
+    for path in [
+        format!("/sonarr/api/v3/system/status?apikey={TOKEN}"),
+        "/jellyfin/Users/Me".to_owned(),
+        "/".to_owned(),
+    ] {
+        let answered = ask(config.service(), Method::GET, &path, &[], Body::empty()).await;
+        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{path}");
+    }
+    assert!(config.recorded().is_empty());
+}
+
+#[tokio::test]
+async fn routes_that_cannot_be_read_answer_unavailable() {
+    let config = Config::new("unreadable");
+    config.write(File::Upstreams, "not the routes");
 
     let answered = ask(
         config.service(),

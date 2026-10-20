@@ -14,7 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::asked::Asked;
-use crate::files::Files;
+use crate::files::{Files, Routes};
 use crate::settings::Settings;
 use crate::upstream::{passed, Plan, Reach, Stop};
 use crate::version::Versions;
@@ -90,7 +90,9 @@ enum Listed {
 
 /// The answer to one call.
 ///
-/// A call not on its route's list is refused with `403`, sent nowhere, and recorded.
+/// Before the core has written the routes, every call is refused with `403`, sent
+/// nowhere and not recorded; routes it cannot read answer `503`. A call not on its
+/// route's list is refused with `403`, sent nowhere, and recorded.
 /// One on the list without the route's token is answered `401`. One on a route whose
 /// upstream runs a version the gate does not forward to is answered `503`. Every other
 /// is built by the gate and sent, and a removal is recorded before it is.
@@ -106,8 +108,10 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
         to_bytes(body, BODY).await.ok(),
     );
 
-    let Some(upstreams) = service.files.upstreams().await else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    let upstreams = match service.files.upstreams().await {
+        Routes::Written(upstreams) => upstreams,
+        Routes::Unwritten => return StatusCode::FORBIDDEN.into_response(),
+        Routes::Unreadable => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
     };
     let Some(upstream) = upstreams.route(&asked.route) else {
         return refused(&service, &asked).await;

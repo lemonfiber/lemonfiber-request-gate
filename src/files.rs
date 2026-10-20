@@ -23,11 +23,14 @@ impl Files {
         }
     }
 
-    /// The routes the core wrote, where the file can be read.
-    pub(crate) async fn upstreams(&self) -> Option<Upstreams> {
-        read(&self.config, File::Upstreams)
-            .await
-            .and_then(|text| Upstreams::read(&text).ok())
+    /// The routes the core wrote, none where it has written none yet, or that the file is
+    /// there and cannot be read.
+    pub(crate) async fn upstreams(&self) -> Routes {
+        match tokio::fs::read_to_string(self.config.join(File::Upstreams.name())).await {
+            Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => Routes::Unwritten,
+            Err(_) => Routes::Unreadable,
+            Ok(text) => Upstreams::read(&text).map_or(Routes::Unreadable, Routes::Written),
+        }
     }
 
     /// Whether `token` is one `route` accepts. A file that cannot be read accepts
@@ -65,6 +68,16 @@ impl Files {
                 .await
                 .is_ok()
     }
+}
+
+/// The routes the core wrote, as the gate finds them.
+pub(crate) enum Routes {
+    /// The core has written none yet, so the gate admits nothing.
+    Unwritten,
+    /// The file is there and cannot be read.
+    Unreadable,
+    /// The routes, read.
+    Written(Upstreams),
 }
 
 /// The text of `file` in `config`, where it can be read.
