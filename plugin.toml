@@ -25,6 +25,7 @@ reaches       = ""
 asks_for      = "Nothing beyond this machine. It answers only Seerr, and makes the calls Seerr's requests, scans and sign-ins need of Sonarr, Radarr and Jellyfin, over networks it shares with them alone."
 posture       = "confined"
 replaces      = "request-gate"
+provides      = ["request.gate"]
 
 [[proof]]
 id      = "request-gate.names-itself"
@@ -37,3 +38,19 @@ prints its name and version and exits cleanly.
 """
 run     = { args = ["version"] }
 expect  = { exit = 0, stdout_starts_with = "request-gate " }
+
+[[ask]]
+capability = "library.curate"
+each       = true
+
+[[ask]]
+capability = "identity.source"
+
+[[claim]]
+capability = "request.gate"
+
+[[claim.probe]]
+id      = "guarded"
+request = { method = "GET", path = "/sonarr/api/v3/system/status" }
+expect  = { status = 403 }
+fixture = "recordings/request-gate/request-gate-guarded.json"
