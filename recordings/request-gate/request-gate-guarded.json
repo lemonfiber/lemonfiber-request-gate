@@ -1,5 +1,5 @@
 {
-  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:baaa0c6d0462de81ab228650df4f66384c0feae13d7e740a14b75dc508a57428",
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:c074a9098c7ebd94726e748c93b050e31c87765e2d63c42901f866222dce260f",
   "note": "A call to a curator through the gate, presenting no token, on a fresh gate the core has applied no routes to. A gate applied no routes admits nothing, so it refuses the call without sending it anywhere; the refusal is the pass.",
   "request": {"method": "GET", "path": "/sonarr/api/v3/system/status"},
   "response": {"status": 403}
