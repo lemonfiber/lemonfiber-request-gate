@@ -6,8 +6,8 @@ and shows, and the services that act on those requests: Sonarr, Radarr and
 Jellyfin.
 
 This repository builds the container image `ghcr.io/lemonfiber/request-gate`.
-You do not run it yourself: [`lemonfiber-media-stack`](https://github.com/lemonfiber/lemonfiber-media-stack)
-runs it as the service `request-gate`, and `lemonfiber` writes its configuration.
+You do not run it yourself: lemonfiber installs it as the plugin `request-gate`,
+from the `plugin.toml` here, and writes its configuration.
 
 ## Why it exists
 
@@ -41,8 +41,7 @@ The list of calls is in [`src/arr.rs`](src/arr.rs) (Sonarr and Radarr) and
 | Version | `request-gate version`, which prints `request-gate` and its version to standard output |
 | Container | Distroless base, non-root user, read-only root filesystem, no kernel capabilities |
 
-The compose entry and its networks are in
-[`lemonfiber-media-stack`](https://github.com/lemonfiber/lemonfiber-media-stack).
+lemonfiber writes the compose entry and its networks from `plugin.toml`.
 The design is written up in the specification:
 [`30-repos/lemonfiber-request-gate.md`](https://github.com/lemonfiber/spec/blob/main/30-repos/lemonfiber-request-gate.md).
 
@@ -59,7 +58,7 @@ docker build -t request-gate .
 ```
 
 Images are published from version tags. Each tag builds `linux/amd64` and
-`linux/arm64`, and `lemonfiber-media-stack` pins the digest it published.
+`linux/arm64`, and `plugin.toml` pins the digest it published.
 
 ## Contributing and security
 
