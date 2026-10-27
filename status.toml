@@ -7,7 +7,7 @@
 #
 # The stack's side of the containment (no published port, the two internal
 # networks, no data mount, a read-only root, no capabilities) is the compose entry
-# lemonfiber-media-stack keeps; minting and rotating the tokens, registering the
+# the core writes from this repository's `plugin.toml`; minting and rotating the tokens, registering the
 # gate with the request service, and the doctor check that reads the record are
 # the core's.
 
@@ -19,4 +19,6 @@ requirement = [
   { id = "C6-R25", state = "partial", evidence = ["src/files.rs", "src/files/tests.rs::each_entry_is_added_after_the_last"] },
   { id = "D1-R12", state = "partial", evidence = ["src/version.rs", "src/version/tests.rs"] },
   { id = "D1-R19", state = "partial", evidence = ["src/serving.rs", "src/jellyfin/tests.rs::the_servers_name_and_an_avatar_go_upstream_with_no_credential"] },
+  { id = "F14-R1", state = "open" },
+  { id = "F14-R7", state = "open" },
 ]
