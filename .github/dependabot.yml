@@ -7,6 +7,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # reqwest is the adapter kit's, which takes 0.12: a second major beside it is one
+    # cargo-deny refuses as a duplicate.
+    ignore:
+      - dependency-name: "reqwest"
+        versions: [">= 0.13"]
     groups:
       crates:
         patterns: ["*"]

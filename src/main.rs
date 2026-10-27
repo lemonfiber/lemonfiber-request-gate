@@ -2,17 +2,20 @@
 //!
 //! It runs in the stack beside the request service, publishes no port, and is
 //! reachable only from that service. It holds the upstreams' credentials, answers a
-//! fixed list of calls it builds itself, and refuses and records every other.
+//! fixed list of calls it builds itself, and refuses and records every other. It speaks
+//! `request.gate` to the core on a port of its own.
 
 mod arr;
 mod asked;
 #[cfg(test)]
 mod fake;
 mod files;
+mod holding;
 mod jellyfin;
 mod serving;
 mod settings;
 mod shape;
+mod speaking;
 mod upstream;
 mod version;
 
@@ -26,11 +29,17 @@ const LISTEN: SocketAddr = SocketAddr::new(
     lemonfiber_sidecar::gate::PORT,
 );
 
+/// Where the gate speaks `request.gate` inside its container, which the stack publishes
+/// on loopback alone.
+const CONTRACT: SocketAddr =
+    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 5058);
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         None => {
             let settings = settings::Settings::from(|name| std::env::var(name).ok());
+            let config = settings.config.clone();
             let service = match serving::client() {
                 Ok(client) => serving::Service::new(settings, client),
                 Err(error) => {
@@ -43,7 +52,13 @@ async fn main() -> ExitCode {
             let stopped = async {
                 let _ = tokio::signal::ctrl_c().await;
             };
-            serving::serve(LISTEN, service, stopped).await
+            tokio::select! {
+                code = serving::serve(LISTEN, service, stopped) => code,
+                stopped = speaking::serve(CONTRACT, &config) => {
+                    eprintln!("request-gate: request.gate is not answered on {CONTRACT}: {stopped:?}");
+                    ExitCode::FAILURE
+                }
+            }
         }
         Some("health") => serving::healthy(LISTEN.port()).await,
         Some("version") => {

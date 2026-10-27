@@ -34,8 +34,8 @@ The list of calls is in [`src/arr.rs`](src/arr.rs) (Sonarr and Radarr) and
 
 | | |
 | --- | --- |
-| Listens on | Port 5057 inside its container, on the stack's internal networks only |
-| Configuration | `/config`, which `lemonfiber` fills: `upstreams.json` (where each upstream is, and its key), `tokens.json` (hashes of the tokens Seerr may present) and `record.json` (the refusals and removals, written by the gate) |
+| Listens on | Port 5057 inside its container, on the stack's internal networks only, for the request service, and port 5058 for lemonfiber's `request.gate` contract, published on loopback alone |
+| Configuration | `/config`: the key lemonfiber asks the contract with (`lemonfiber.key`); the routes and tokens lemonfiber hands the gate, `upstreams.json` (where each upstream is, and its key) and `tokens.json` (hashes of the tokens Seerr may present); and `record.json` (the refusals and removals, written by the gate) |
 | Settings | `LEMONFIBER_REQUEST_GATE_CONFIG` moves the configuration directory; nothing else is configurable |
 | Health check | `request-gate health`, which asks the running gate over loopback |
 | Version | `request-gate version`, which prints `request-gate` and its version to standard output |
@@ -48,9 +48,9 @@ The design is written up in the specification:
 ## Building and testing
 
 You need Rust (the version in [`rust-toolchain.toml`](rust-toolchain.toml)) and
-Docker. The build fetches one crate from the
-[`lemonfiber`](https://github.com/lemonfiber/lemonfiber) repository, at the
-commit pinned in [`Cargo.toml`](Cargo.toml), so it needs network access the first time.
+Docker. The build fetches the contract, the adapter kit, the ports and the file
+formats from the [`lemonfiber`](https://github.com/lemonfiber/lemonfiber)
+repository, at the commit pinned in [`Cargo.toml`](Cargo.toml), so it needs network access the first time.
 
 ```sh
 cargo test

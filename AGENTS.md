@@ -14,7 +14,7 @@ The request gate: the request service's one path to Sonarr, Radarr and Jellyfin 
 
 ## The one rule you cannot break here
 
-**Nothing is forwarded as it came.** Every call on the list is built by the gate itself from the parameters and body fields ADR-0032 names, and every other call is refused with 403 and recorded. A route that passes a request, a header or a token through is a defect however it is reached.
+**Nothing is forwarded as it came.** Every call on the list is built by the gate itself from the parameters and body fields ADR-0032 names, and every other call is refused with 403 and recorded. A route that passes a request, a header or a token through is a defect however it is reached. The routes, their credentials and their tokens arrive over `request.gate`, under the plugin's key, on a port of its own that the request service never reaches.
 
 ## Code standards (enforced)
 
