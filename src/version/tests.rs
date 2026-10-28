@@ -56,7 +56,7 @@ fn rewrite(
 #[tokio::test]
 async fn an_arr_is_asked_once_and_again_only_when_its_route_changes() {
     let fake = upstream(vec![json(Method::GET, "/api/v3/tag", &json!([]))]).await;
-    let config = Config::new("arr-asked").with_routes(&fake.address);
+    let config = Config::new("arr-asked").with_upstream(&fake);
     let service = config.service();
 
     let first = tags(&service).await;
@@ -84,7 +84,7 @@ async fn an_arr_that_cannot_say_its_status_hands_back_why_and_is_asked_again() {
         json(Method::GET, "/api/v3/tag", &json!([])),
     ])
     .await;
-    let config = Config::new("arr-unanswered").with_routes(&fake.address);
+    let config = Config::new("arr-unanswered").with_upstream(&fake);
     let service = config.service();
 
     let first = tags(&service).await;
@@ -102,7 +102,7 @@ async fn an_arr_that_cannot_say_its_status_hands_back_why_and_is_asked_again() {
 #[tokio::test]
 async fn a_media_server_on_a_supported_major_is_asked_once() {
     let fake = upstream(vec![json(Method::GET, "/Users", &json!([]))]).await;
-    let config = Config::new("jellyfin-supported").with_routes(&fake.address);
+    let config = Config::new("jellyfin-supported").with_upstream(&fake);
     let service = config.service();
 
     let first = users(&service).await;
@@ -127,7 +127,7 @@ async fn every_call_on_a_media_server_of_another_major_is_answered_503_naming_it
         json(Method::GET, "/Users", &json!([])),
     ])
     .await;
-    let config = Config::new("jellyfin-unsupported").with_routes(&fake.address);
+    let config = Config::new("jellyfin-unsupported").with_upstream(&fake);
     let service = config.service();
 
     let first = users(&service).await;
@@ -160,7 +160,7 @@ async fn every_call_on_a_media_server_of_another_major_is_answered_503_naming_it
 #[tokio::test]
 async fn a_media_server_route_naming_no_major_supports_none() {
     let fake = upstream(vec![json(Method::GET, "/Users", &json!([]))]).await;
-    let config = Config::new("jellyfin-no-majors").with_routes(&fake.address);
+    let config = Config::new("jellyfin-no-majors").with_upstream(&fake);
     rewrite(&config, "jellyfin", |one| {
         one.majors = Vec::new();
     });
@@ -183,7 +183,7 @@ async fn a_version_that_does_not_start_with_a_number_is_not_supported() {
         &json!({ "Version": "unstable" }),
     )])
     .await;
-    let config = Config::new("jellyfin-unnumbered").with_routes(&fake.address);
+    let config = Config::new("jellyfin-unnumbered").with_upstream(&fake);
 
     let answered = users(&config.service()).await;
 
@@ -202,7 +202,7 @@ async fn a_media_server_that_does_not_say_its_version_is_a_bad_gateway() {
         &json!({ "ServerName": "home" }),
     )])
     .await;
-    let config = Config::new("jellyfin-silent").with_routes(&fake.address);
+    let config = Config::new("jellyfin-silent").with_upstream(&fake);
 
     let silent = users(&config.service()).await;
 

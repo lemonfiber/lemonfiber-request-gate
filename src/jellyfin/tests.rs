@@ -14,7 +14,7 @@ const OWNER: &str = "BOT_seerr";
 /// A gate whose Jellyfin route reaches an upstream answering `answers`.
 async fn gate(name: &str, answers: Vec<Answer>) -> (Config, Fake) {
     let fake = upstream(answers).await;
-    let config = Config::new(name).with_routes(&fake.address);
+    let config = Config::new(name).with_upstream(&fake);
     (config, fake)
 }
 
@@ -657,4 +657,63 @@ async fn administration_is_refused_and_recorded() {
     }
     assert!(fake.seen().is_empty());
     assert_eq!(config.recorded().len(), refused.len());
+}
+
+#[tokio::test]
+async fn a_server_presenting_a_certificate_the_route_does_not_pin_is_sent_nothing() {
+    let fake = upstream(Vec::new()).await;
+    let config = Config::new("unpinned").with_routes(&fake.tls);
+
+    let answered = call(&config, Method::GET, "/System/Info/Public", None, None).await;
+
+    assert_eq!(answered.status, StatusCode::BAD_GATEWAY);
+    assert!(fake.all().is_empty());
+}
+
+/// Rewrite `config`'s routes so its Jellyfin route pins `pins`.
+fn pinning(config: &Config, pins: &[String]) {
+    use lemonfiber_sidecar::gate::{File, Upstreams};
+    let read = Upstreams::read(&config.read(File::Upstreams));
+    assert!(read.is_ok());
+    let Ok(mut upstreams) = read else { return };
+    for one in &mut upstreams.upstreams {
+        one.pins = lemonfiber_sidecar::Pins::of(pins).unwrap_or_default();
+    }
+    config.write(File::Upstreams, &upstreams.written());
+}
+
+#[tokio::test]
+async fn a_route_pinning_no_certificate_reaches_nothing() {
+    let fake = upstream(Vec::new()).await;
+    let config = Config::new("no-pins").with_upstream(&fake);
+    pinning(&config, &[]);
+
+    let answered = call(&config, Method::GET, "/System/Info/Public", None, None).await;
+
+    assert_eq!(answered.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(fake.all().is_empty());
+}
+
+#[tokio::test]
+async fn the_pinned_client_is_made_again_when_the_pins_change() {
+    let fake = upstream(Vec::new()).await;
+    let config = Config::new("pins-change").with_upstream(&fake);
+    let service = config.service();
+    let public = || {
+        ask(
+            service.clone(),
+            Method::GET,
+            "/jellyfin/System/Info/Public",
+            &[],
+            Body::empty(),
+        )
+    };
+
+    assert_eq!(public().await.status, StatusCode::OK);
+    assert_eq!(public().await.status, StatusCode::OK);
+    pinning(
+        &config,
+        &[lemonfiber_pinned::sha256(b"another certificate")],
+    );
+    assert_eq!(public().await.status, StatusCode::BAD_GATEWAY);
 }

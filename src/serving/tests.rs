@@ -57,7 +57,7 @@ async fn routes_that_cannot_be_read_answer_unavailable() {
 #[tokio::test]
 async fn a_route_the_core_did_not_write_is_refused_and_recorded() {
     let fake = upstream(Vec::new()).await;
-    let config = Config::new("unknown-route").with_routes(&fake.address);
+    let config = Config::new("unknown-route").with_upstream(&fake);
 
     for path in ["/lidarr/api/v1/system/status", "/", "/health/again"] {
         let answered = ask(config.service(), Method::GET, path, &[], Body::empty()).await;
@@ -88,7 +88,7 @@ async fn a_route_the_core_did_not_write_is_refused_and_recorded() {
 #[tokio::test]
 async fn a_refusal_is_recorded_without_its_query_string_and_its_token() {
     let fake = upstream(Vec::new()).await;
-    let config = Config::new("refused").with_routes(&fake.address);
+    let config = Config::new("refused").with_upstream(&fake);
 
     let answered = ask(
         config.service(),
@@ -118,7 +118,7 @@ async fn a_refusal_is_recorded_without_its_query_string_and_its_token() {
 #[tokio::test]
 async fn a_listed_call_without_the_routes_token_is_answered_401_and_sent_nowhere() {
     let fake = upstream(vec![json(Method::GET, "/api/v3/system/status", &json!({}))]).await;
-    let config = Config::new("unauthorised").with_routes(&fake.address);
+    let config = Config::new("unauthorised").with_upstream(&fake);
 
     for uri in [
         "/sonarr/api/v3/system/status".to_owned(),
@@ -137,7 +137,7 @@ async fn a_listed_call_without_the_routes_token_is_answered_401_and_sent_nowhere
 #[tokio::test]
 async fn a_token_file_that_cannot_be_read_accepts_nothing() {
     let fake = upstream(vec![json(Method::GET, "/api/v3/system/status", &json!({}))]).await;
-    let config = Config::new("tokens-unreadable").with_routes(&fake.address);
+    let config = Config::new("tokens-unreadable").with_upstream(&fake);
     config.write(File::Tokens, "not tokens");
 
     let answered = ask(
@@ -227,7 +227,7 @@ async fn a_read_the_gate_makes_for_its_checks_hands_back_the_upstreams_status() 
         StatusCode::NOT_FOUND,
     )])
     .await;
-    let config = Config::new("check-status").with_routes(&fake.address);
+    let config = Config::new("check-status").with_upstream(&fake);
 
     let answered = ask(
         config.service(),
@@ -252,7 +252,7 @@ async fn a_redirect_is_handed_back_rather_than_followed() {
         format!("{}/api/v3/system/status", elsewhere.address),
     )])
     .await;
-    let config = Config::new("redirect").with_routes(&fake.address);
+    let config = Config::new("redirect").with_upstream(&fake);
 
     let answered = ask(
         config.service(),
@@ -270,7 +270,7 @@ async fn a_redirect_is_handed_back_rather_than_followed() {
 #[tokio::test]
 async fn a_body_larger_than_the_gate_reads_is_refused() {
     let fake = upstream(Vec::new()).await;
-    let config = Config::new("too-large").with_routes(&fake.address);
+    let config = Config::new("too-large").with_upstream(&fake);
     let large = "x".repeat(super::BODY + 1);
 
     let answered = ask(
@@ -294,7 +294,7 @@ async fn a_removal_is_recorded_and_then_passed_on() {
         StatusCode::OK,
     )])
     .await;
-    let config = Config::new("removal").with_routes(&fake.address);
+    let config = Config::new("removal").with_upstream(&fake);
 
     let answered = ask(
         config.service(),
@@ -340,7 +340,7 @@ async fn a_removal_that_cannot_be_recorded_is_not_passed_on() {
         StatusCode::OK,
     )])
     .await;
-    let config = Config::new("unrecorded-removal").with_routes(&fake.address);
+    let config = Config::new("unrecorded-removal").with_upstream(&fake);
     let _ = std::fs::set_permissions(config.path(), std::fs::Permissions::from_mode(0o555));
 
     let answered = ask(
@@ -363,7 +363,7 @@ async fn a_refusal_that_cannot_be_recorded_is_still_refused() {
     use std::os::unix::fs::PermissionsExt;
 
     let fake = upstream(Vec::new()).await;
-    let config = Config::new("unrecorded-refusal").with_routes(&fake.address);
+    let config = Config::new("unrecorded-refusal").with_upstream(&fake);
     let _ = std::fs::set_permissions(config.path(), std::fs::Permissions::from_mode(0o555));
 
     let answered = ask(

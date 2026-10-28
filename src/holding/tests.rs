@@ -54,6 +54,17 @@ fn route(target: Target, path: &str, token: &str) -> Gated {
     }
 }
 
+fn pin() -> String {
+    "ab".repeat(32)
+}
+
+fn media(path: &str, token: &str) -> Gated {
+    Gated {
+        address: format!("https://{path}:8920"),
+        ..route(Target::MediaServer { pins: vec![pin()] }, path, token)
+    }
+}
+
 fn routes() -> Vec<Gated> {
     vec![
         route(
@@ -70,7 +81,7 @@ fn routes() -> Vec<Gated> {
             "movies",
             "movies-token",
         ),
-        route(Target::MediaServer, "jellyfin", "jellyfin-token"),
+        media("jellyfin", "jellyfin-token"),
     ]
 }
 
@@ -120,7 +131,7 @@ async fn routes_admitted_again_leave_none_of_the_earlier_ones() {
     let holding = config.holding();
     assert!(holding.admit(&routes()).await.is_ok());
 
-    let later = vec![route(Target::MediaServer, "jellyfin", "later")];
+    let later = vec![media("jellyfin", "later")];
     assert!(holding.admit(&later).await.is_ok());
 
     let files = Files::new(config.0.clone());
@@ -157,7 +168,7 @@ async fn a_route_with_a_token_that_is_no_sha256_or_a_curator_of_nothing_it_reach
         hash.to_ascii_uppercase(),
         hash[1..].to_owned(),
     ] {
-        let mut one = route(Target::MediaServer, "jellyfin", "x");
+        let mut one = media("jellyfin", "x");
         one.tokens = vec![token];
         refused.push(one);
     }
@@ -168,6 +179,16 @@ async fn a_route_with_a_token_that_is_no_sha256_or_a_curator_of_nothing_it_reach
         "books",
         "books-token",
     ));
+    refused.push(Gated {
+        address: "http://jellyfin:8096".to_owned(),
+        ..media("jellyfin", "x")
+    });
+    for pin in ["AB".repeat(32), "ab".repeat(31), "not a pin".to_owned()] {
+        refused.push(Gated {
+            target: Target::MediaServer { pins: vec![pin] },
+            ..media("jellyfin", "x")
+        });
+    }
 
     for one in refused {
         assert!(matches!(

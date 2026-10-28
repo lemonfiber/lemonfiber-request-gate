@@ -11,6 +11,7 @@ fn route(address: &str) -> Upstream {
         address: address.to_owned(),
         credential: Credential::new("key"),
         majors: Vec::new(),
+        pins: lemonfiber_sidecar::Pins::default(),
     }
 }
 

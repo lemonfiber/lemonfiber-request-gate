@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use lemonfiber_ports::media;
 use lemonfiber_ports::service::{Admitted, Failure, Gated, Gating, Target};
 use lemonfiber_sidecar::gate::{Accepted, Credential, File, Kind, Tokens, Upstream, Upstreams};
-use lemonfiber_sidecar::TokenHash;
+use lemonfiber_sidecar::{Pins, TokenHash};
 
 /// The name the gate gives itself in a failure.
 const SERVICE: &str = "request-gate";
@@ -120,7 +120,7 @@ impl Gating for Holding {
                     })
                     .unwrap_or_default();
                 Admitted::of(&Gated {
-                    target: target(upstream.kind),
+                    target: target(upstream.kind, &upstream.pins),
                     path: upstream.route.clone(),
                     address: upstream.address.clone(),
                     majors: upstream.majors.clone(),
@@ -132,14 +132,28 @@ impl Gating for Holding {
     }
 }
 
-/// `route` as the routes file holds it.
+/// The scheme alone a route to the media server may be reached by.
+const ENCRYPTED: &str = "https://";
+
+/// `route` as the routes file holds it, or why it is refused: a route to the media server
+/// is reached only over TLS, accepting only a certificate it pins.
 fn upstream(route: &Gated) -> Result<Upstream, Failure> {
+    let pins = match &route.target {
+        Target::MediaServer { pins } => {
+            if !route.address.starts_with(ENCRYPTED) {
+                return Err(refused("the media server is reached only over TLS"));
+            }
+            Pins::of(pins).map_err(|unreadable| refused(&unreadable.to_string()))?
+        }
+        Target::Curator { .. } => Pins::default(),
+    };
     Ok(Upstream {
         route: route.path.clone(),
         kind: kind(&route.target)?,
         address: route.address.clone(),
         credential: Credential::new(route.credential.clone()),
         majors: route.majors.clone(),
+        pins,
     })
 }
 
@@ -171,12 +185,12 @@ fn kind(target: &Target) -> Result<Kind, Failure> {
                 "it reaches no curator filing {media_type}"
             ))),
         },
-        Target::MediaServer => Ok(Kind::Jellyfin),
+        Target::MediaServer { .. } => Ok(Kind::Jellyfin),
     }
 }
 
-/// What a route of `kind` reaches.
-fn target(kind: Kind) -> Target {
+/// What a route of `kind`, pinning `pins`, reaches.
+fn target(kind: Kind, pins: &Pins) -> Target {
     match kind {
         Kind::Sonarr => Target::Curator {
             media_type: media::Kind::Tv.media_type().to_owned(),
@@ -184,7 +198,9 @@ fn target(kind: Kind) -> Target {
         Kind::Radarr => Target::Curator {
             media_type: media::Kind::Movies.media_type().to_owned(),
         },
-        Kind::Jellyfin => Target::MediaServer,
+        Kind::Jellyfin => Target::MediaServer {
+            pins: pins.listed().to_vec(),
+        },
     }
 }
 
