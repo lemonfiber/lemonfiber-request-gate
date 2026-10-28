@@ -9,7 +9,8 @@ use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
-use lemonfiber_sidecar::gate::{Kind, Outcome};
+use lemonfiber_sidecar::gate::{Kind, Outcome, Upstream};
+use lemonfiber_sidecar::Pins;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -27,22 +28,42 @@ const HEALTH: &str = "/health";
 /// carries, and a bound on what one call can make it hold.
 const BODY: usize = 1024 * 1024;
 
-/// What every call is answered with: the files, the client, and what each upstream
-/// answered when asked its version.
+/// What every call is answered with: the files, the client, the client pinned to the
+/// media server's certificates, and what each upstream answered when asked its version.
 pub(crate) struct Service {
     files: Files,
     client: reqwest::Client,
+    pinned: tokio::sync::Mutex<Option<(Pins, reqwest::Client)>>,
     versions: Versions,
 }
 
 impl Service {
-    /// A service over `settings`, sending every call with `client`.
+    /// A service over `settings`, sending every call to a curator with `client`.
     pub(crate) fn new(settings: Settings, client: reqwest::Client) -> Arc<Self> {
         Arc::new(Self {
             files: Files::new(settings.config),
             client,
+            pinned: tokio::sync::Mutex::new(None),
             versions: Versions::default(),
         })
+    }
+
+    /// The client a call to `upstream` is sent with: for the media server, one that
+    /// reaches it only over TLS to a certificate its route pins, made once for those pins;
+    /// nothing where it pins none.
+    async fn client_for(&self, upstream: &Upstream) -> Option<reqwest::Client> {
+        if upstream.kind != Kind::Jellyfin {
+            return Some(self.client.clone());
+        }
+        let mut pinned = self.pinned.lock().await;
+        if let Some((pins, client)) = pinned.as_ref() {
+            if *pins == upstream.pins {
+                return Some(client.clone());
+            }
+        }
+        let client = lemonfiber_pinned::client(upstream.pins.listed(), None)?;
+        *pinned = Some((upstream.pins.clone(), client.clone()));
+        Some(client)
     }
 }
 
@@ -136,8 +157,11 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
         }
     }
 
+    let Some(client) = service.client_for(upstream).await else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
     let reach = Reach {
-        client: &service.client,
+        client: &client,
         upstream,
     };
     if let Err(answer) = service.versions.supported(&reach).await {

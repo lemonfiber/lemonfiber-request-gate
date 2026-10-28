@@ -25,6 +25,8 @@ The gate:
   rather than forwarding what Seerr sent;
 - refuses every other call and forwards none of it. It records each refusal,
   and each removal it passed on, without tokens, query strings or bodies;
+- reaches Jellyfin only over TLS at its internal TLS port, and sends a call
+  there only to a certificate whose SHA-256 lemonfiber pinned with the route;
 - publishes no port. Only Seerr can reach it, over a network the two share.
 
 The list of calls is in [`src/arr.rs`](src/arr.rs) (Sonarr and Radarr) and
@@ -35,7 +37,7 @@ The list of calls is in [`src/arr.rs`](src/arr.rs) (Sonarr and Radarr) and
 | | |
 | --- | --- |
 | Listens on | Port 5057 inside its container, on the stack's internal networks only, for the request service, and port 5058 for lemonfiber's `request.gate` contract, published on loopback alone |
-| Configuration | `/config`: the key lemonfiber asks the contract with (`lemonfiber.key`); the routes and tokens lemonfiber hands the gate, `upstreams.json` (where each upstream is, and its key) and `tokens.json` (hashes of the tokens Seerr may present); and `record.json` (the refusals and removals, written by the gate) |
+| Configuration | `/config`: the key lemonfiber asks the contract with (`lemonfiber.key`); the routes and tokens lemonfiber hands the gate, `upstreams.json` (where each upstream is, its key, and for Jellyfin the SHA-256 of each certificate its internal TLS port may present) and `tokens.json` (hashes of the tokens Seerr may present); and `record.json` (the refusals and removals, written by the gate) |
 | Settings | `LEMONFIBER_REQUEST_GATE_CONFIG` moves the configuration directory; nothing else is configurable |
 | Health check | `request-gate health`, which asks the running gate over loopback |
 | Version | `request-gate version`, which prints `request-gate` and its version to standard output |

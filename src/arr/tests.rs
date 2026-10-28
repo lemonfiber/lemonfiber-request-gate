@@ -13,7 +13,7 @@ mod reads;
 /// A gate whose routes all reach an upstream answering `answers`.
 async fn gate(name: &str, answers: Vec<Answer>) -> (Config, Fake) {
     let fake = upstream(answers).await;
-    let config = Config::new(name).with_routes(&fake.address);
+    let config = Config::new(name).with_upstream(&fake);
     (config, fake)
 }
 

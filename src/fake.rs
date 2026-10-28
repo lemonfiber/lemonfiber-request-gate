@@ -14,7 +14,7 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use lemonfiber_sidecar::gate::{Accepted, Credential, File, Kind, Tokens, Upstream, Upstreams};
-use lemonfiber_sidecar::TokenHash;
+use lemonfiber_sidecar::{Pins, TokenHash};
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tower::ServiceExt;
@@ -69,17 +69,41 @@ impl Config {
     }
 
     /// This directory with a Sonarr, a Radarr and a Jellyfin route, all reaching
-    /// `address`, and each route's token.
+    /// `address`, the Jellyfin one pinning a certificate nothing presents, and each
+    /// route's token.
     pub(crate) fn with_routes(self, address: &str) -> Self {
+        self.routed(
+            address,
+            address,
+            &lemonfiber_pinned::sha256(b"no certificate"),
+        )
+    }
+
+    /// This directory with a Sonarr and a Radarr route reaching `fake` and a Jellyfin one
+    /// reaching it over TLS, pinning the certificate it presents, and each route's token.
+    pub(crate) fn with_upstream(self, fake: &Fake) -> Self {
+        self.routed(&fake.address, &fake.tls, &fake.pin)
+    }
+
+    fn routed(self, address: &str, encrypted: &str, pin: &str) -> Self {
         let route = |route: &str, kind| Upstream {
             route: route.to_owned(),
             kind,
-            address: address.to_owned(),
+            address: if kind == Kind::Jellyfin {
+                encrypted.to_owned()
+            } else {
+                address.to_owned()
+            },
             credential: Credential::new(KEY),
             majors: if kind == Kind::Jellyfin {
                 vec![MAJOR]
             } else {
                 Vec::new()
+            },
+            pins: if kind == Kind::Jellyfin {
+                Pins::of(&[pin.to_owned()]).unwrap_or_default()
+            } else {
+                Pins::default()
             },
         };
         let upstreams = Upstreams::of(vec![
@@ -210,10 +234,13 @@ pub(crate) fn raw(
 /// The paths the gate asks an upstream's version on.
 const PROBES: [&str; 2] = ["/api/v3/system/status", "/System/Info/Public"];
 
-/// An upstream standing, and what it was sent.
+/// An upstream standing, over plain HTTP at `address` and over TLS at `tls` presenting
+/// the certificate `pin` is the SHA-256 of, and what it was sent.
 #[derive(Clone)]
 pub(crate) struct Fake {
     pub(crate) address: String,
+    pub(crate) tls: String,
+    pub(crate) pin: String,
     seen: Arc<Mutex<Vec<Seen>>>,
 }
 
@@ -266,9 +293,13 @@ pub(crate) async fn upstream(mut answers: Vec<Answer>) -> Fake {
         .and_then(|listener| listener.local_addr().ok())
         .map(|at| at.to_string())
         .unwrap_or_default();
+    let encrypted = lemonfiber_pinned::fake::tls(app.clone());
     drop(listener.map(|listener| tokio::spawn(axum::serve(listener, app).into_future())));
+    let (tls, pin) = encrypted.map_or_else(Default::default, |served| (served.base, served.pin));
     Fake {
         address: format!("http://{at}"),
+        tls,
+        pin,
         seen,
     }
 }

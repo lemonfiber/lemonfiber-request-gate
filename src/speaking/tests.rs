@@ -46,9 +46,11 @@ fn plugin_key() -> String {
 
 fn media_server() -> Gated {
     Gated {
-        target: Target::MediaServer,
+        target: Target::MediaServer {
+            pins: vec!["ef".repeat(32)],
+        },
         path: "jellyfin".to_owned(),
-        address: "http://jellyfin:8096".to_owned(),
+        address: "https://jellyfin:8920".to_owned(),
         majors: vec![10],
         credential: ('k'..='z').collect(),
         tokens: vec![TokenHash::of("token").as_str().to_owned()],
