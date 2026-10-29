@@ -17,7 +17,11 @@ fn route(address: &str) -> Upstream {
 
 #[tokio::test]
 async fn an_address_that_is_not_one_cannot_be_reached() {
-    let client = reqwest::Client::new();
+    let client = crate::serving::client();
+    assert!(client.is_ok(), "the gate's client is built");
+    let Ok(client) = client else {
+        return;
+    };
     let upstream = route("not an address");
     let reach = Reach {
         client: &client,
@@ -43,7 +47,11 @@ async fn a_read_for_a_check_is_the_upstreams_answer_when_it_succeeds_and_can_be_
         ),
     ])
     .await;
-    let client = reqwest::Client::new();
+    let client = crate::serving::client();
+    assert!(client.is_ok(), "the gate's client is built");
+    let Ok(client) = client else {
+        return;
+    };
     let upstream = route(&format!("{}/", fake.address));
     let reach = Reach {
         client: &client,

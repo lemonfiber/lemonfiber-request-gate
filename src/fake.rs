@@ -295,7 +295,15 @@ pub(crate) async fn upstream(mut answers: Vec<Answer>) -> Fake {
         .unwrap_or_default();
     let encrypted = lemonfiber_pinned::fake::tls(app.clone());
     drop(listener.map(|listener| tokio::spawn(axum::serve(listener, app).into_future())));
-    let (tls, pin) = encrypted.map_or_else(Default::default, |served| (served.base, served.pin));
+    let (tls, pin) = encrypted.map_or_else(Default::default, |served| {
+        let base = served
+            .base
+            .as_url()
+            .as_str()
+            .trim_end_matches('/')
+            .to_owned();
+        (base, served.pin)
+    });
     Fake {
         address: format!("http://{at}"),
         tls,
