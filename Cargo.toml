@@ -19,19 +19,19 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 base64 = "0.23"
 # The contract it speaks, the kit that serves it, and the formats of the files in its
 # configuration directory, from the core at the commit the train releases this build with.
-lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "f1584160a7a4ed4606496efcd4d1a6e7bbcf3fb1" }
-lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "f1584160a7a4ed4606496efcd4d1a6e7bbcf3fb1" }
-lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "f1584160a7a4ed4606496efcd4d1a6e7bbcf3fb1" }
-lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "f1584160a7a4ed4606496efcd4d1a6e7bbcf3fb1" }
-lemonfiber-sidecar = { git = "https://github.com/lemonfiber/lemonfiber", rev = "f1584160a7a4ed4606496efcd4d1a6e7bbcf3fb1" }
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
+lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "23d16d26f54af845163ff4b004be71bca3972939" }
+lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "23d16d26f54af845163ff4b004be71bca3972939" }
+lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "23d16d26f54af845163ff4b004be71bca3972939" }
+lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "23d16d26f54af845163ff4b004be71bca3972939" }
+lemonfiber-sidecar = { git = "https://github.com/lemonfiber/lemonfiber", rev = "23d16d26f54af845163ff4b004be71bca3972939" }
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
 ring = "0.17"
 serde_json = "1"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "signal", "sync"] }
 url = "2"
 
 [dev-dependencies]
-lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "f1584160a7a4ed4606496efcd4d1a6e7bbcf3fb1", features = ["test-support"] }
+lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "23d16d26f54af845163ff4b004be71bca3972939", features = ["test-support"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [lints.rust]

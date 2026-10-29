@@ -70,7 +70,7 @@ impl Service {
 /// The client every call is sent with. It goes only where the gate sends it: it
 /// follows no redirect and goes through no proxy the environment names.
 pub(crate) fn client() -> Result<reqwest::Client, reqwest::Error> {
-    reqwest::Client::builder()
+    lemonfiber_adapter_kit::web::client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .build()
