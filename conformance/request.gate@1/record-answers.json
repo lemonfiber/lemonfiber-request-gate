@@ -1,0 +1,13 @@
+{
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:9f847c25d802ec7cb5c0c61ad81270e56c9f6631936efcd087ad1af898977e96",
+  "note": "What the gate refused and what removals it passed on after the entry asked for: nothing, since no call reached it while it was recorded.",
+  "request": {"method": "POST", "path": "/lemonfiber/request.gate/v1/record", "accept": "application/json"},
+  "response": {
+    "status": 200,
+    "headers": {"content-type": "application/json"},
+    "json": {
+      "entries": [],
+      "lost": 0
+    }
+  }
+}
