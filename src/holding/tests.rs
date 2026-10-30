@@ -1,8 +1,10 @@
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
 
-use lemonfiber_ports::service::{Failure, Gated, Gating, Target};
-use lemonfiber_sidecar::gate::File;
+use lemonfiber_ports::service::{
+    Failure, GateEntry, GateOutcome, GateRecord, Gated, Gating, Target,
+};
+use lemonfiber_sidecar::gate::{File, Kept, Outcome, Record};
 use lemonfiber_sidecar::TokenHash;
 
 use super::Holding;
@@ -221,4 +223,178 @@ async fn a_copy_left_behind_that_cannot_be_cleared_is_refused() {
         Err(Failure::Refused { .. })
     ));
     assert_eq!(config.read(File::Upstreams), "");
+}
+
+fn hash(token: &str) -> String {
+    TokenHash::of(token).as_str().to_owned()
+}
+
+#[tokio::test]
+async fn tokens_admitted_on_one_route_replace_its_tokens_and_leave_every_credential_and_other_route(
+) {
+    let config = Config::new("tokens");
+    let holding = config.holding();
+    assert!(holding.admit(&routes()).await.is_ok());
+    let upstreams = config.read(File::Upstreams);
+
+    let admitted = holding
+        .admit_tokens("jellyfin", &[hash("rotated"), hash("kept")])
+        .await;
+
+    assert!(admitted.is_ok(), "{admitted:?}");
+    let files = Files::new(config.0.clone());
+    assert!(files.accepts("jellyfin", Some("rotated")).await);
+    assert!(files.accepts("jellyfin", Some("kept")).await);
+    assert!(!files.accepts("jellyfin", Some("jellyfin-token")).await);
+    assert!(files.accepts("tv", Some("tv-token")).await);
+    assert!(files.accepts("movies", Some("movies-token")).await);
+    assert_eq!(config.read(File::Upstreams), upstreams);
+    assert_eq!(config.mode(File::Tokens), 0o600);
+}
+
+#[tokio::test]
+async fn tokens_on_a_route_with_none_yet_are_added_beside_the_rest() {
+    let config = Config::new("tokens-first");
+    let holding = config.holding();
+    assert!(holding.admit(&routes()).await.is_ok());
+    let _ = std::fs::remove_file(config.0.join(File::Tokens.name()));
+
+    assert!(holding.admit_tokens("tv", &[hash("first")]).await.is_ok());
+
+    let files = Files::new(config.0.clone());
+    assert!(files.accepts("tv", Some("first")).await);
+    assert!(!files.accepts("movies", Some("movies-token")).await);
+}
+
+#[tokio::test]
+async fn tokens_are_refused_on_a_route_it_does_not_admit_or_unlike_a_sha256_and_nothing_changes() {
+    let config = Config::new("tokens-refused");
+    let holding = config.holding();
+    let unadmitted = holding.admit_tokens("tv", &[hash("early")]).await;
+    assert!(
+        matches!(&unadmitted, Err(Failure::Refused { detail, .. }) if detail.contains("\"tv\"")),
+        "{unadmitted:?}"
+    );
+    assert!(holding.admit(&routes()).await.is_ok());
+    let tokens = config.read(File::Tokens);
+
+    for (route, admitted) in [
+        ("sonarr", vec![hash("one")]),
+        ("tv", vec!["not-a-sha256".to_owned()]),
+        ("tv", vec![hash("one").to_uppercase()]),
+    ] {
+        let answer = holding.admit_tokens(route, &admitted).await;
+        assert!(
+            matches!(answer, Err(Failure::Refused { .. })),
+            "{route}: {answer:?}"
+        );
+    }
+    assert_eq!(config.read(File::Tokens), tokens);
+}
+
+#[tokio::test]
+async fn tokens_are_refused_where_the_routes_or_the_tokens_cannot_be_read() {
+    for (name, unreadable) in [("routes", File::Upstreams), ("held", File::Tokens)] {
+        let config = Config::new(&format!("tokens-unreadable-{name}"));
+        let holding = config.holding();
+        assert!(holding.admit(&routes()).await.is_ok());
+        let _ = std::fs::write(config.0.join(unreadable.name()), "not what it holds");
+
+        let answer = holding.admit_tokens("tv", &[hash("one")]).await;
+
+        assert!(
+            matches!(&answer, Err(Failure::Refused { detail, .. }) if detail.contains("could not be read")),
+            "{name}: {answer:?}"
+        );
+    }
+    let config = Config::new("tokens-a-directory");
+    let _ = std::fs::create_dir(config.0.join(File::Upstreams.name()));
+    let answer = config.holding().admit_tokens("tv", &[hash("one")]).await;
+    assert!(
+        matches!(&answer, Err(Failure::Refused { detail, .. }) if detail.contains("could not be read")),
+        "{answer:?}"
+    );
+}
+
+fn recorded(entries: usize) -> Record {
+    (0..entries).fold(Record::default(), |record, at| {
+        let outcome = if at % 2 == 0 {
+            Outcome::Refused
+        } else {
+            Outcome::Removed
+        };
+        record.with(
+            u64::try_from(at).unwrap_or_default(),
+            "tv",
+            "DELETE",
+            "/api/v3/series/1?deleteFiles=true",
+            outcome,
+            Kept::standard(),
+        )
+    })
+}
+
+#[tokio::test]
+async fn the_record_is_answered_after_the_entry_asked_for_and_never_with_a_query() {
+    let config = Config::new("record");
+    let _ = std::fs::write(config.0.join(File::Record.name()), recorded(3).written());
+
+    let answer = config.holding().record(1).await;
+
+    assert_eq!(
+        answer.ok(),
+        Some(GateRecord {
+            entries: vec![
+                GateEntry {
+                    seq: 2,
+                    at: 1,
+                    route: "tv".to_owned(),
+                    method: "DELETE".to_owned(),
+                    path: "/api/v3/series/1".to_owned(),
+                    outcome: GateOutcome::Removed,
+                },
+                GateEntry {
+                    seq: 3,
+                    at: 2,
+                    route: "tv".to_owned(),
+                    method: "DELETE".to_owned(),
+                    path: "/api/v3/series/1".to_owned(),
+                    outcome: GateOutcome::Refused,
+                },
+            ],
+            lost: 0,
+        })
+    );
+}
+
+#[tokio::test]
+async fn entries_the_record_no_longer_holds_are_counted_as_lost() {
+    let config = Config::new("record-lost");
+    let kept = Kept::standard().entries();
+    let _ = std::fs::write(
+        config.0.join(File::Record.name()),
+        recorded(kept + 5).written(),
+    );
+
+    let answer = config.holding().record(2).await.unwrap_or_default();
+
+    assert_eq!(answer.lost, 3);
+    assert_eq!(answer.entries.len(), kept);
+    assert_eq!(answer.entries.first().map(|one| one.seq), Some(6));
+}
+
+#[tokio::test]
+async fn no_record_yet_is_an_empty_one_and_an_unreadable_record_is_refused() {
+    let config = Config::new("record-none");
+    assert_eq!(
+        config.holding().record(0).await.ok(),
+        Some(GateRecord::default())
+    );
+
+    let _ = std::fs::write(config.0.join(File::Record.name()), "not a record");
+    let answer = config.holding().record(0).await;
+    assert!(
+        matches!(&answer, Err(Failure::Refused { detail, .. }) if detail.contains("record could not be read")),
+        "{answer:?}"
+    );
 }
