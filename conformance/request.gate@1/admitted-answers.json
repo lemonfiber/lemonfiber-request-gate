@@ -1,0 +1,33 @@
+{
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:9f847c25d802ec7cb5c0c61ad81270e56c9f6631936efcd087ad1af898977e96",
+  "note": "The routes the gate admits, read back from what it holds, each credential by its SHA-256 alone and every token by its SHA-256.",
+  "request": {"method": "POST", "path": "/lemonfiber/request.gate/v1/admitted", "accept": "application/json"},
+  "response": {
+    "status": 200,
+    "headers": {"content-type": "application/json"},
+    "json": [
+      {
+        "address": "http://conformance-curator:58989",
+        "credential": "{minted:sha256}",
+        "majors": [],
+        "path": "tv",
+        "target": {
+          "curator": {"media_type": "tv"}
+        },
+        "tokens": ["0000000000000000000000000000000000000000000000000000000000000000"]
+      },
+      {
+        "address": "https://conformance-media-server:8920",
+        "credential": "{minted:sha256}",
+        "majors": [10],
+        "path": "media-server",
+        "target": {
+          "media-server": {
+            "pins": ["ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"]
+          }
+        },
+        "tokens": ["0000000000000000000000000000000000000000000000000000000000000000"]
+      }
+    ]
+  }
+}

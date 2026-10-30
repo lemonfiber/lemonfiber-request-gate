@@ -14,8 +14,8 @@ forms       = ["library", "full"]
 id            = "request-gate"
 name          = "Request gate"
 image         = "ghcr.io/lemonfiber/request-gate"
-digest        = "sha256:f682664552aa23ef3e9fdca82f310fd3a07262d70371598beba3bec020dd9323"
-tag           = "main-fa5564844d4d"
+digest        = "sha256:9f847c25d802ec7cb5c0c61ad81270e56c9f6631936efcd087ad1af898977e96"
+tag           = "main-3722b28b3152"
 listens       = 5057
 health        = { kind = "container" }
 criticality   = "important"
@@ -26,9 +26,12 @@ asks_for      = "Nothing beyond this machine. It answers only Seerr, and makes t
 posture       = "confined"
 replaces      = "request-gate"
 provides      = ["request.gate"]
+contract      = 5058
+speaks        = ["request.gate@1"]
 
 [[proof]]
 id      = "request-gate.names-itself"
+service = "request-gate"
 title   = "The gate's own program says which gate it is"
 fixture = "recordings/request-gate/names-itself.json"
 why     = """
@@ -45,12 +48,3 @@ each       = true
 
 [[ask]]
 capability = "identity.source"
-
-[[claim]]
-capability = "request.gate"
-
-[[claim.probe]]
-id      = "guarded"
-request = { method = "GET", path = "/sonarr/api/v3/system/status" }
-expect  = { status = 403 }
-fixture = "recordings/request-gate/request-gate-guarded.json"

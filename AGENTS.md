@@ -21,3 +21,4 @@ The request gate: the request service's one path to Sonarr, Radarr and Jellyfin 
 - `unsafe` is **forbidden**. No `unwrap`/`expect`/`panic`/`todo` in non-test code.
 - **No lint suppressions in `src/`**: change the code or the rule, never `#[allow]`.
 - The image stays distroless and non-root, with nothing in it but the binary.
+- **`conformance/request.gate@1/` holds one recording per case of `request.gate@1`**, which the image `plugin.toml` pins answers itself (`ARCH-R344`), written by `lemonfiber plugin record .` at the core `targets.toml` names. Re-record whenever an answer or the pinned image changes; a credential minted for a run is recorded as `{minted:sha256}` where an answer holds its SHA-256.
