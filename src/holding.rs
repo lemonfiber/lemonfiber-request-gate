@@ -1,6 +1,7 @@
 //! What the core hands the gate over `request.gate`, held in its configuration directory:
 //! the routes it admits with the credential it presents on each, and the hashes of the
-//! tokens it admits there.
+//! tokens it admits there; and the record of what the gate refused and what removals it
+//! passed on, read back after the last entry the core holds.
 //!
 //! Each file is written whole, from a copy made afresh and renamed over it, so a call never
 //! reads half of one, and readable by the gate's own user alone.
@@ -9,8 +10,12 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use lemonfiber_ports::media;
-use lemonfiber_ports::service::{Admitted, Failure, Gated, Gating, Target};
-use lemonfiber_sidecar::gate::{Accepted, Credential, File, Kind, Tokens, Upstream, Upstreams};
+use lemonfiber_ports::service::{
+    Admitted, Failure, GateEntry, GateOutcome, GateRecord, Gated, Gating, Target,
+};
+use lemonfiber_sidecar::gate::{
+    Accepted, Credential, Entry, File, Kind, Outcome, Record, Tokens, Upstream, Upstreams,
+};
 use lemonfiber_sidecar::{Pins, TokenHash};
 
 /// The name the gate gives itself in a failure.
@@ -45,10 +50,15 @@ impl Holding {
             .ok()
     }
 
-    /// Write each of `files` whole, from a copy made afresh, so a copy left behind lends it
-    /// neither its permissions nor a link.
+    /// Write each of `files` whole, one write at a time.
     async fn written(&self, files: Vec<(File, String)>) -> Result<(), Failure> {
         let _writing = self.writing.lock().await;
+        self.replaced(files).await
+    }
+
+    /// Write each of `files` whole, from a copy made afresh, so a copy left behind lends it
+    /// neither its permissions nor a link; the caller holds the write lock.
+    async fn replaced(&self, files: Vec<(File, String)>) -> Result<(), Failure> {
         let config = self.config.clone();
         let done = tokio::task::spawn_blocking(move || {
             use std::io::Write as _;
@@ -78,6 +88,15 @@ impl Holding {
         done.ok()
             .and_then(Result::ok)
             .ok_or_else(|| refused("the routes could not be written"))
+    }
+
+    /// What `file` holds, none where it is not there, or why it cannot be read.
+    async fn held(&self, file: File) -> Result<Option<String>, Failure> {
+        match tokio::fs::read_to_string(self.config.join(file.name())).await {
+            Ok(text) => Ok(Some(text)),
+            Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(_) => Err(refused(&format!("{} could not be read", file.name()))),
+        }
     }
 }
 
@@ -129,6 +148,73 @@ impl Gating for Holding {
                 })
             })
             .collect())
+    }
+
+    async fn admit_tokens(&self, route: &str, tokens: &[String]) -> Result<(), Failure> {
+        if !tokens.iter().all(|token| hashed(token)) {
+            return Err(refused(
+                "a token is not a SHA-256 in lower-case hexadecimal",
+            ));
+        }
+        let _writing = self.writing.lock().await;
+        let upstreams = self
+            .held(File::Upstreams)
+            .await?
+            .map(|text| Upstreams::read(&text))
+            .transpose()
+            .map_err(|_| refused("the routes could not be read"))?
+            .unwrap_or_else(|| Upstreams::of(Vec::new()));
+        if upstreams.route(route).is_none() {
+            return Err(refused(&format!("it admits no route under {route:?}")));
+        }
+        let held = self
+            .held(File::Tokens)
+            .await?
+            .map(|text| Tokens::read(&text))
+            .transpose()
+            .map_err(|_| refused("the tokens could not be read"))?
+            .map(|read| read.routes)
+            .unwrap_or_default();
+        let mut routes: Vec<Accepted> = held
+            .into_iter()
+            .filter(|one| !one.route.eq_ignore_ascii_case(route))
+            .collect();
+        routes.push(Accepted {
+            route: route.to_owned(),
+            tokens: tokens.iter().map(|hash| TokenHash::written(hash)).collect(),
+        });
+        self.replaced(vec![(File::Tokens, Tokens::of(routes).written())])
+            .await
+    }
+
+    async fn record(&self, after: u64) -> Result<GateRecord, Failure> {
+        let record = self
+            .held(File::Record)
+            .await?
+            .map(|text| Record::read(&text))
+            .transpose()
+            .map_err(|_| refused("the record could not be read"))?
+            .unwrap_or_default();
+        let (entries, lost) = record.since(after);
+        Ok(GateRecord {
+            entries: entries.into_iter().map(entry).collect(),
+            lost,
+        })
+    }
+}
+
+/// `entry` as the contract carries it.
+fn entry(entry: &Entry) -> GateEntry {
+    GateEntry {
+        seq: entry.seq,
+        at: entry.at,
+        route: entry.route.clone(),
+        method: entry.method.clone(),
+        path: entry.path.clone(),
+        outcome: match entry.outcome {
+            Outcome::Refused => GateOutcome::Refused,
+            Outcome::Removed => GateOutcome::Removed,
+        },
     }
 }
 
