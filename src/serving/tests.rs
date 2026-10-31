@@ -1,9 +1,9 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::process::ExitCode;
 
+use crate::formats::gate::{File, Outcome, Record};
 use axum::body::Body;
 use axum::http::{Method, StatusCode};
-use lemonfiber_sidecar::gate::{File, Outcome, Record};
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;

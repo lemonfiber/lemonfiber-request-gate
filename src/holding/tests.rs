@@ -1,11 +1,11 @@
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
 
+use crate::formats::gate::{File, Kept, Outcome, Record};
+use crate::formats::TokenHash;
 use lemonfiber_ports::service::{
     Failure, GateEntry, GateOutcome, GateRecord, Gated, Gating, Target,
 };
-use lemonfiber_sidecar::gate::{File, Kept, Outcome, Record};
-use lemonfiber_sidecar::TokenHash;
 
 use super::Holding;
 use crate::files::{Files, Routes};

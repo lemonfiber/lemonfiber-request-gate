@@ -8,13 +8,13 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::formats::gate::{Accepted, Credential, File, Kind, Tokens, Upstream, Upstreams};
+use crate::formats::{Pins, TokenHash};
 use axum::body::{to_bytes, Body, Bytes};
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
-use lemonfiber_sidecar::gate::{Accepted, Credential, File, Kind, Tokens, Upstream, Upstreams};
-use lemonfiber_sidecar::{Pins, TokenHash};
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tower::ServiceExt;
@@ -137,7 +137,7 @@ impl Config {
 
     /// Each entry the record holds, as `METHOD path`.
     pub(crate) fn recorded(&self) -> Vec<String> {
-        lemonfiber_sidecar::gate::Record::read(&self.read(File::Record))
+        crate::formats::gate::Record::read(&self.read(File::Record))
             .unwrap_or_default()
             .entries
             .iter()

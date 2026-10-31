@@ -784,24 +784,13 @@ dependencies = [
  "lemonfiber-contract",
  "lemonfiber-pinned",
  "lemonfiber-ports",
- "lemonfiber-sidecar",
  "reqwest",
  "ring",
+ "serde",
  "serde_json",
  "tokio",
  "tower",
  "url",
-]
-
-[[package]]
-name = "lemonfiber-sidecar"
-version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=73539d17ce7497324a03032861dcd4dfdd451f6f#73539d17ce7497324a03032861dcd4dfdd451f6f"
-dependencies = [
- "base64",
- "ring",
- "serde",
- "serde_json",
 ]
 
 [[package]]

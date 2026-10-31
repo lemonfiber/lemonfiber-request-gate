@@ -672,12 +672,12 @@ async fn a_server_presenting_a_certificate_the_route_does_not_pin_is_sent_nothin
 
 /// Rewrite `config`'s routes so its Jellyfin route pins `pins`.
 fn pinning(config: &Config, pins: &[String]) {
-    use lemonfiber_sidecar::gate::{File, Upstreams};
+    use crate::formats::gate::{File, Upstreams};
     let read = Upstreams::read(&config.read(File::Upstreams));
     assert!(read.is_ok());
     let Ok(mut upstreams) = read else { return };
     for one in &mut upstreams.upstreams {
-        one.pins = lemonfiber_sidecar::Pins::of(pins).unwrap_or_default();
+        one.pins = crate::formats::Pins::of(pins).unwrap_or_default();
     }
     config.write(File::Upstreams, &upstreams.written());
 }

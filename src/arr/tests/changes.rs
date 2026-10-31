@@ -1,7 +1,7 @@
 //! A removal and a command each carry only what the gate names for them.
 
+use crate::formats::gate::{File, Outcome, Record};
 use axum::http::{Method, StatusCode};
-use lemonfiber_sidecar::gate::{File, Outcome, Record};
 use serde_json::json;
 
 use super::{call, gate, only};

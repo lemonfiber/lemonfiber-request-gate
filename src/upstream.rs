@@ -1,9 +1,9 @@
 //! The requests the gate builds, and how it sends them and hands back what came of them.
 
+use crate::formats::gate::Upstream;
 use axum::body::Body;
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::Response;
-use lemonfiber_sidecar::gate::Upstream;
 use serde_json::Value;
 use url::Url;
 

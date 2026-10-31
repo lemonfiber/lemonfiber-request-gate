@@ -7,9 +7,9 @@
 
 use std::collections::HashMap;
 
+use crate::formats::gate::{Kind, Upstream};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use lemonfiber_sidecar::gate::{Kind, Upstream};
 use serde_json::Value;
 use tokio::sync::Mutex;
 

@@ -8,15 +8,15 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::formats::gate::{
+    Accepted, Credential, Entry, File, Kind, Outcome, Record, Tokens, Upstream, Upstreams,
+};
+use crate::formats::{Pins, TokenHash};
 use async_trait::async_trait;
 use lemonfiber_ports::media;
 use lemonfiber_ports::service::{
     Admitted, Failure, GateEntry, GateOutcome, GateRecord, Gated, Gating, Target,
 };
-use lemonfiber_sidecar::gate::{
-    Accepted, Credential, Entry, File, Kind, Outcome, Record, Tokens, Upstream, Upstreams,
-};
-use lemonfiber_sidecar::{Pins, TokenHash};
 
 /// The name the gate gives itself in a failure.
 const SERVICE: &str = "request-gate";

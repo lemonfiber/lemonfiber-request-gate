@@ -2,12 +2,12 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::formats::gate::File;
+use crate::formats::TokenHash;
 use lemonfiber_adapter_kit::web::Web;
 use lemonfiber_contract::capabilities::request::gate;
 use lemonfiber_contract::Contracted;
 use lemonfiber_ports::service::{Gated, Gating, Target};
-use lemonfiber_sidecar::gate::File;
-use lemonfiber_sidecar::TokenHash;
 
 use super::{about, kit, serve, UPSTREAM};
 

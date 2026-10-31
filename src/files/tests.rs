@@ -1,4 +1,4 @@
-use lemonfiber_sidecar::gate::{File, Outcome, Record};
+use crate::formats::gate::{File, Outcome, Record};
 
 use super::{Files, Routes};
 use crate::fake::{Config, TOKEN};

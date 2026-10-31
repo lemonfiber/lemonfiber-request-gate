@@ -4,13 +4,13 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use crate::formats::gate::{Kind, Outcome, Upstream};
+use crate::formats::Pins;
 use axum::body::to_bytes;
 use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
-use lemonfiber_sidecar::gate::{Kind, Outcome, Upstream};
-use lemonfiber_sidecar::Pins;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
