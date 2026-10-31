@@ -7,8 +7,8 @@
 
 mod written;
 
+use crate::formats::gate::Kind;
 use axum::http::{HeaderName, HeaderValue, Method};
-use lemonfiber_sidecar::gate::Kind;
 use serde_json::{json, Value};
 
 use crate::asked::Asked;

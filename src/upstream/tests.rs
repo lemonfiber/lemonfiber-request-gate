@@ -1,5 +1,5 @@
+use crate::formats::gate::{Credential, Kind, Upstream};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
-use lemonfiber_sidecar::gate::{Credential, Kind, Upstream};
 
 use super::{kept, Built, Reach, Stop};
 use crate::fake::{raw, status, upstream};
@@ -11,7 +11,7 @@ fn route(address: &str) -> Upstream {
         address: address.to_owned(),
         credential: Credential::new("key"),
         majors: Vec::new(),
-        pins: lemonfiber_sidecar::Pins::default(),
+        pins: crate::formats::Pins::default(),
     }
 }
 

@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use lemonfiber_sidecar::gate::{File, Kept, Outcome, Record, Tokens, Upstreams};
+use crate::formats::gate::{File, Kept, Outcome, Record, Tokens, Upstreams};
 use tokio::sync::Mutex;
 
 /// The configuration directory, and the one lock that keeps two entries from writing

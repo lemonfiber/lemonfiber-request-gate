@@ -1,9 +1,9 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+use crate::formats::gate::{Credential, File, Upstreams};
 use axum::body::Body;
 use axum::http::{Method, StatusCode};
-use lemonfiber_sidecar::gate::{Credential, File, Upstreams};
 use serde_json::json;
 use tokio::net::TcpListener;
 
@@ -39,7 +39,7 @@ async fn users(service: &Arc<Service>) -> Answered {
 fn rewrite(
     config: &Config,
     route: &str,
-    changed: impl FnOnce(&mut lemonfiber_sidecar::gate::Upstream),
+    changed: impl FnOnce(&mut crate::formats::gate::Upstream),
 ) {
     let mut upstreams = Upstreams::read(&config.read(File::Upstreams))
         .unwrap_or_else(|_| Upstreams::of(Vec::new()));

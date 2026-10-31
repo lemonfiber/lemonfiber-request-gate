@@ -10,6 +10,7 @@ mod asked;
 #[cfg(test)]
 mod fake;
 mod files;
+mod formats;
 mod holding;
 mod jellyfin;
 mod serving;
@@ -26,7 +27,7 @@ use std::process::ExitCode;
 /// service reaches it over the one network the two share.
 const LISTEN: SocketAddr = SocketAddr::new(
     std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-    lemonfiber_sidecar::gate::PORT,
+    crate::formats::gate::PORT,
 );
 
 /// Where the gate speaks `request.gate` inside its container, which the stack publishes
