@@ -48,3 +48,4 @@ each       = true
 
 [[ask]]
 capability = "identity.source"
+native     = "jellyfin"
