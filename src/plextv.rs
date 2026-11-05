@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use lemonfiber_ports::service::{OutsideAccount, PlexLink, PlexServer};
+use lemonfiber_ports::service::{OutsideAccount, OutsideServer, PlexLink, PlexMember};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
@@ -199,8 +199,8 @@ fn address(id: &str) -> String {
 }
 
 /// The household's accounts with this server, as plex.tv lists the accounts a server is
-/// shared with.
-fn users(members: &[OutsideAccount], server: &PlexServer) -> Option<String> {
+/// shared with, each by its name.
+fn users(members: &[PlexMember], server: &OutsideServer) -> Option<String> {
     let mut listed = String::new();
     for member in members {
         member.id.parse::<u64>().ok()?;
@@ -208,28 +208,28 @@ fn users(members: &[OutsideAccount], server: &PlexServer) -> Option<String> {
             listed,
             r#"<User id="{}" title="{}" username="{}" email="{}" thumb=""><Server id="{}" serverId="{}" machineIdentifier="{}" name="{}" lastSeenAt="0" numLibraries="0" allLibraries="1" owned="0" pending="0"/></User>"#,
             escaped(&member.id),
-            escaped(&member.title),
-            escaped(&member.username),
+            escaped(&member.name),
+            escaped(&member.name),
             escaped(&address(&member.id)),
             escaped(&member.id),
             escaped(&member.id),
-            escaped(&server.machine_identifier),
+            escaped(&server.id),
             escaped(&server.name),
         );
     }
     Some(format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><MediaContainer friendlyName="myPlex" identifier="com.plexapp.plugins.myplex" machineIdentifier="{}" totalSize="{count}" size="{count}">{listed}</MediaContainer>"#,
-        escaped(&server.machine_identifier),
+        escaped(&server.id),
         count = members.len(),
     ))
 }
 
 /// This server alone, as plex.tv lists the resources an account reaches.
-fn resources(server: &PlexServer) -> String {
+fn resources(server: &OutsideServer) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><MediaContainer size="1"><Device name="{}" product="Plex Media Server" productVersion="" platform="" platformVersion="" device="" clientIdentifier="{}" createdAt="0" lastSeenAt="0" provides="server" owned="1" presence="1"/></MediaContainer>"#,
         escaped(&server.name),
-        escaped(&server.machine_identifier),
+        escaped(&server.id),
     )
 }
 

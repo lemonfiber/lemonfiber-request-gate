@@ -417,7 +417,7 @@ fn plex(link: lemonfiber_ports::service::PlexLink) -> Gated {
 #[tokio::test]
 async fn a_plex_route_is_held_with_how_the_request_service_is_linked_and_answered_back_as_applied()
 {
-    use lemonfiber_ports::service::{Admitted, OutsideAccount, PlexLink, PlexServer};
+    use lemonfiber_ports::service::{Admitted, OutsideAccount, OutsideServer, PlexLink};
     for link in [
         PlexLink::Managed,
         PlexLink::Owner {
@@ -431,9 +431,9 @@ async fn a_plex_route_is_held_with_how_the_request_service_is_linked_and_answere
                 title: "lemonfiber-request-gate".to_owned(),
             },
             members: Vec::new(),
-            server: PlexServer {
+            server: OutsideServer {
                 name: "home".to_owned(),
-                machine_identifier: "m".to_owned(),
+                id: "m".to_owned(),
             },
         },
     ] {

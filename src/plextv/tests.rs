@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::http::{Method, StatusCode};
-use lemonfiber_ports::service::{OutsideAccount, PlexLink, PlexServer};
+use lemonfiber_ports::service::{OutsideAccount, OutsideServer, PlexLink, PlexMember};
 use serde_json::json;
 
 use super::{escaped, id, users};
@@ -18,17 +18,24 @@ fn account(id: &str, title: &str) -> OutsideAccount {
     }
 }
 
-fn server() -> PlexServer {
-    PlexServer {
+fn member(id: &str, name: &str) -> PlexMember {
+    PlexMember {
+        id: id.to_owned(),
+        name: name.to_owned(),
+    }
+}
+
+fn server() -> OutsideServer {
+    OutsideServer {
         name: "Home & away".to_owned(),
-        machine_identifier: "the-machine".to_owned(),
+        id: "the-machine".to_owned(),
     }
 }
 
 fn fronted() -> PlexLink {
     PlexLink::Fronted {
         account: account("77", "lemonfiber-request-gate"),
-        members: vec![account("91", "Bo"), account("92", "Cy \"the kid\"")],
+        members: vec![member("91", "Bo"), member("92", "Cy \"the kid\"")],
         server: server(),
     }
 }
@@ -130,7 +137,7 @@ async fn ping_users_and_resources_are_answered_from_what_the_core_applied() {
     assert!(
         users
             .body
-            .contains(r#"<User id="91" title="Bo" username="user91" email="91@plex.invalid""#),
+            .contains(r#"<User id="91" title="Bo" username="Bo" email="91@plex.invalid""#),
         "{}",
         users.body
     );
@@ -338,7 +345,7 @@ async fn an_account_whose_id_is_no_number_is_not_answered() {
     let accounts = plex_tv().await;
     let broken = PlexLink::Fronted {
         account: account("seventy", "x"),
-        members: vec![account("nine", "y")],
+        members: vec![member("nine", "y")],
         server: server(),
     };
     let config = linked(&fake, broken, "front-broken");
@@ -347,7 +354,7 @@ async fn an_account_whose_id_is_no_number_is_not_answered() {
         let answered = front(&config, &accounts, "plex.tv", path, Some(GATE_TOKEN)).await;
         assert_eq!(answered.status, StatusCode::FORBIDDEN, "{path}");
     }
-    assert!(users(&[account("nine", "y")], &server()).is_none());
+    assert!(users(&[member("nine", "y")], &server()).is_none());
 }
 
 #[test]

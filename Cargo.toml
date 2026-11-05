@@ -19,10 +19,10 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 base64 = "0.23"
 # The contract it speaks and the kit that serves it, from the core at the commit the
 # train releases this build with.
-lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "eb15065c8ab9024fb7cd3eec4a0954fd748a2df8" }
-lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "eb15065c8ab9024fb7cd3eec4a0954fd748a2df8" }
-lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "eb15065c8ab9024fb7cd3eec4a0954fd748a2df8" }
-lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "eb15065c8ab9024fb7cd3eec4a0954fd748a2df8" }
+lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "2f54badd4526c33bd5c6e8214c53a8fde3accbd4" }
+lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "2f54badd4526c33bd5c6e8214c53a8fde3accbd4" }
+lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "2f54badd4526c33bd5c6e8214c53a8fde3accbd4" }
+lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "2f54badd4526c33bd5c6e8214c53a8fde3accbd4" }
 hyper = { version = "1", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio", "service"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
@@ -36,7 +36,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring"]
 url = "2"
 
 [dev-dependencies]
-lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "eb15065c8ab9024fb7cd3eec4a0954fd748a2df8", features = ["test-support"] }
+lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "2f54badd4526c33bd5c6e8214c53a8fde3accbd4", features = ["test-support"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
 

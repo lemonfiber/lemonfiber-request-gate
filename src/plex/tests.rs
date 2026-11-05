@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::http::{Method, StatusCode};
-use lemonfiber_ports::service::{OutsideAccount, PlexLink, PlexServer};
+use lemonfiber_ports::service::{OutsideAccount, OutsideServer, PlexLink};
 use serde_json::json;
 
 use crate::fake::{ask_on, json, status, upstream, Config, Fake, KEY, PLEX_TOKEN};
@@ -291,9 +291,9 @@ async fn in_fronted_mode_the_route_admits_the_gate_token() {
                 title: "lemonfiber-request-gate".to_owned(),
             },
             members: Vec::new(),
-            server: PlexServer {
+            server: OutsideServer {
                 name: "home".to_owned(),
-                machine_identifier: "the-machine".to_owned(),
+                id: "the-machine".to_owned(),
             },
         },
         Some("the-gate-token"),
