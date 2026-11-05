@@ -15,7 +15,7 @@ use crate::formats::{Pins, TokenHash};
 use async_trait::async_trait;
 use lemonfiber_ports::media;
 use lemonfiber_ports::service::{
-    Admitted, Failure, GateEntry, GateOutcome, GateRecord, Gated, Gating, Target,
+    Admitted, Failure, GateEntry, GateOutcome, GateRecord, Gated, Gating, PlexLink, Target,
 };
 
 /// The name the gate gives itself in a failure.
@@ -139,7 +139,7 @@ impl Gating for Holding {
                     })
                     .unwrap_or_default();
                 Admitted::of(&Gated {
-                    target: target(upstream.kind, &upstream.pins),
+                    target: target(upstream),
                     path: upstream.route.clone(),
                     address: upstream.address.clone(),
                     majors: upstream.majors.clone(),
@@ -224,14 +224,10 @@ const ENCRYPTED: &str = "https://";
 /// `route` as the routes file holds it, or why it is refused: a route to the media server
 /// is reached only over TLS, accepting only a certificate it pins.
 fn upstream(route: &Gated) -> Result<Upstream, Failure> {
-    let pins = match &route.target {
-        Target::MediaServer { pins } => {
-            if !route.address.starts_with(ENCRYPTED) {
-                return Err(refused("the media server is reached only over TLS"));
-            }
-            Pins::of(pins).map_err(|unreadable| refused(&unreadable.to_string()))?
-        }
-        Target::Curator { .. } => Pins::default(),
+    let (pins, link) = match &route.target {
+        Target::MediaServer { pins } => (encrypted(route, pins)?, None),
+        Target::Plex { pins, link } => (encrypted(route, pins)?, Some(link.clone())),
+        Target::Curator { .. } => (Pins::default(), None),
     };
     Ok(Upstream {
         route: route.path.clone(),
@@ -240,7 +236,16 @@ fn upstream(route: &Gated) -> Result<Upstream, Failure> {
         credential: Credential::new(route.credential.clone()),
         majors: route.majors.clone(),
         pins,
+        link,
     })
+}
+
+/// The pins of a route to the media server, which it is reached by over TLS alone.
+fn encrypted(route: &Gated, pins: &[String]) -> Result<Pins, Failure> {
+    if !route.address.starts_with(ENCRYPTED) {
+        return Err(refused("the media server is reached only over TLS"));
+    }
+    Pins::of(pins).map_err(|unreadable| refused(&unreadable.to_string()))
 }
 
 /// The tokens `route` admits, as the tokens file holds them, or why one is refused.
@@ -272,12 +277,18 @@ fn kind(target: &Target) -> Result<Kind, Failure> {
             ))),
         },
         Target::MediaServer { .. } => Ok(Kind::Jellyfin),
+        Target::Plex { .. } => Ok(Kind::Plex),
     }
 }
 
-/// What a route of `kind`, pinning `pins`, reaches.
-fn target(kind: Kind, pins: &Pins) -> Target {
-    match kind {
+/// What `upstream` reaches.
+fn target(upstream: &Upstream) -> Target {
+    let pins = &upstream.pins;
+    match upstream.kind {
+        Kind::Plex => Target::Plex {
+            pins: pins.listed().to_vec(),
+            link: upstream.link.clone().unwrap_or(PlexLink::Managed),
+        },
         Kind::Sonarr => Target::Curator {
             media_type: media::Kind::Tv.media_type().to_owned(),
         },

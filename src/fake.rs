@@ -21,6 +21,7 @@ use tower::ServiceExt;
 
 use crate::serving::{routes, Service};
 use crate::settings::Settings;
+use lemonfiber_ports::service::PlexLink;
 
 /// The token the Sonarr route accepts.
 pub(crate) const TOKEN: &str = "the-sonarr-token";
@@ -30,6 +31,12 @@ pub(crate) const RADARR_TOKEN: &str = "the-radarr-token";
 
 /// The token the Jellyfin route accepts.
 pub(crate) const JELLYFIN_TOKEN: &str = "the-jellyfin-token";
+
+/// The Plex route's name.
+pub(crate) const PLEX_ROUTE: &str = "plex";
+
+/// The token the Plex route admits in the tests that give it one.
+pub(crate) const PLEX_TOKEN: &str = "the-plex-token";
 
 /// The key the gate holds for each upstream.
 pub(crate) const KEY: &str = "the-upstream-key";
@@ -105,6 +112,7 @@ impl Config {
             } else {
                 Pins::default()
             },
+            link: None,
         };
         let upstreams = Upstreams::of(vec![
             route("sonarr", Kind::Sonarr),
@@ -133,6 +141,45 @@ impl Config {
             },
             crate::serving::client().unwrap_or_default(),
         )
+    }
+
+    /// The gate over this directory, reaching plex.tv at `plex_tv`.
+    pub(crate) fn reaching(&self, plex_tv: &str) -> Arc<Service> {
+        Service::reaching(
+            Settings {
+                config: self.path(),
+            },
+            crate::serving::client().unwrap_or_default(),
+            plex_tv,
+        )
+    }
+
+    /// This directory with one Plex route reaching `fake` over TLS, pinning the certificate
+    /// it presents, linked as `link`, admitting `admits` where it is a token, and
+    /// supporting `majors`.
+    pub(crate) fn with_plex(
+        self,
+        fake: &Fake,
+        link: PlexLink,
+        admits: Option<&str>,
+        majors: Vec<u32>,
+    ) -> Self {
+        let upstreams = Upstreams::of(vec![Upstream {
+            route: PLEX_ROUTE.to_owned(),
+            kind: Kind::Plex,
+            address: fake.tls.clone(),
+            credential: Credential::new(KEY),
+            majors,
+            pins: Pins::of(std::slice::from_ref(&fake.pin)).unwrap_or_default(),
+            link: Some(link),
+        }]);
+        self.write(File::Upstreams, &upstreams.written());
+        let tokens = Tokens::of(vec![Accepted {
+            route: PLEX_ROUTE.to_owned(),
+            tokens: admits.map(TokenHash::of).into_iter().collect(),
+        }]);
+        self.write(File::Tokens, &tokens.written());
+        self
     }
 
     /// Each entry the record holds, as `METHOD path`.
@@ -368,12 +415,23 @@ pub(crate) async fn ask(
     headers: &[(&str, &str)],
     body: Body,
 ) -> Answered {
+    ask_on(routes(service), method, uri, headers, body).await
+}
+
+/// Ask `router` `method` on `uri`, with `headers` and `body`.
+pub(crate) async fn ask_on(
+    router: Router,
+    method: Method,
+    uri: &str,
+    headers: &[(&str, &str)],
+    body: Body,
+) -> Answered {
     let mut request = axum::http::Request::builder().method(method).uri(uri);
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
     let request = request.body(body).unwrap_or_default();
-    let Ok(response) = routes(service).oneshot(request).await;
+    let Ok(response) = router.oneshot(request).await;
     let status = response.status();
     let headers = response.headers().clone();
     let body = to_bytes(response.into_body(), usize::MAX)

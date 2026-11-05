@@ -398,3 +398,79 @@ async fn no_record_yet_is_an_empty_one_and_an_unreadable_record_is_refused() {
         "{answer:?}"
     );
 }
+
+fn plex(link: lemonfiber_ports::service::PlexLink) -> Gated {
+    Gated {
+        address: "https://plex:32400".to_owned(),
+        majors: Vec::new(),
+        ..route(
+            Target::Plex {
+                pins: vec![pin()],
+                link,
+            },
+            "plex",
+            "plex-token",
+        )
+    }
+}
+
+#[tokio::test]
+async fn a_plex_route_is_held_with_how_the_request_service_is_linked_and_answered_back_as_applied()
+{
+    use lemonfiber_ports::service::{Admitted, OutsideAccount, PlexLink, PlexServer};
+    for link in [
+        PlexLink::Managed,
+        PlexLink::Owner {
+            account: "4242".to_owned(),
+        },
+        PlexLink::Fronted {
+            account: OutsideAccount {
+                id: "77".to_owned(),
+                uuid: "u".to_owned(),
+                username: String::new(),
+                title: "lemonfiber-request-gate".to_owned(),
+            },
+            members: Vec::new(),
+            server: PlexServer {
+                name: "home".to_owned(),
+                machine_identifier: "m".to_owned(),
+            },
+        },
+    ] {
+        let config = Config::new("plex-held");
+        let applied = plex(link.clone());
+
+        assert!(config
+            .holding()
+            .admit(std::slice::from_ref(&applied))
+            .await
+            .is_ok());
+
+        let held = crate::formats::gate::Upstreams::read(&config.read(File::Upstreams));
+        let held = held.ok().and_then(|held| held.plex().cloned());
+        assert_eq!(
+            held.as_ref().map(|one| one.kind),
+            Some(crate::formats::gate::Kind::Plex)
+        );
+        assert_eq!(held.and_then(|one| one.link), Some(link));
+        assert_eq!(
+            config.holding().admitted().await.ok(),
+            Some(vec![Admitted::of(&applied)])
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_plex_route_reached_without_tls_is_refused_and_nothing_is_written() {
+    let config = Config::new("plex-plain");
+    let plain = Gated {
+        address: "http://plex:32400".to_owned(),
+        ..plex(lemonfiber_ports::service::PlexLink::Managed)
+    };
+
+    assert!(matches!(
+        config.holding().admit(&[plain]).await,
+        Err(Failure::Refused { detail, .. }) if detail.contains("TLS")
+    ));
+    assert!(config.read(File::Upstreams).is_empty());
+}

@@ -12,6 +12,7 @@ fn route(address: &str) -> Upstream {
         credential: Credential::new("key"),
         majors: Vec::new(),
         pins: crate::formats::Pins::default(),
+        link: None,
     }
 }
 

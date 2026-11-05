@@ -4,8 +4,8 @@ schema_version = 1
 id          = "request-gate"
 name        = "Request gate"
 version     = "0.17.0"
-description = "Stands between Seerr and Sonarr, Radarr and Jellyfin, so Seerr holds none of their keys"
-without_it  = "Seerr cannot reach Sonarr, Radarr or Jellyfin: requests are not sent, and members cannot sign in to Seerr"
+description = "Stands between Seerr and Sonarr, Radarr and the media server, so Seerr holds none of their keys"
+without_it  = "Seerr cannot reach Sonarr, Radarr or the media server: requests are not sent, and members cannot sign in to Seerr"
 upstream    = "https://github.com/lemonfiber/lemonfiber-request-gate"
 license     = "Hippocratic-3.0"
 forms       = ["library", "full"]
@@ -21,8 +21,8 @@ health        = { kind = "container" }
 criticality   = "important"
 memory_mib    = 32
 mem_limit_mib = 64
-reaches       = ""
-asks_for      = "Nothing beyond this machine. It answers only Seerr, and makes the calls Seerr's requests, scans and sign-ins need of Sonarr, Radarr and Jellyfin, over networks it shares with them alone."
+reaches       = "plex.tv"
+asks_for      = "Where Plex is the media server, plex.tv's account read alone: whose a token Seerr presents is, once per token, when Seerr's owner is the operator's own Plex account, and a member's own Plex sign-in, passed on unchanged, when Seerr reaches plex.tv through the gate. Otherwise nothing beyond this machine. It answers only Seerr, and makes the calls Seerr's requests, scans and sign-ins need of Sonarr, Radarr and the media server, over networks it shares with them alone."
 posture       = "confined"
 replaces      = "request-gate"
 provides      = ["request.gate"]
@@ -48,4 +48,4 @@ each       = true
 
 [[ask]]
 capability = "identity.source"
-native     = "jellyfin"
+native     = ["jellyfin", "plex"]

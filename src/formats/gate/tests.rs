@@ -12,6 +12,7 @@ fn sonarr() -> Upstream {
         credential: Credential::new("the-sonarr-key"),
         majors: Vec::new(),
         pins: Pins::default(),
+        link: None,
     }
 }
 
@@ -23,6 +24,7 @@ fn jellyfin() -> Upstream {
         credential: Credential::new("the-gates-key"),
         majors: vec![10, 12],
         pins: Pins::of(&["ab".repeat(32)]).unwrap_or_default(),
+        link: None,
     }
 }
 

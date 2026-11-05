@@ -416,7 +416,7 @@ async fn serving_stops_when_told_to() {
 
     let stopped = serve(
         SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-        config.service(),
+        routes(config.service()),
         std::future::ready(()),
     )
     .await;
@@ -434,7 +434,31 @@ async fn an_address_already_taken_is_a_failure_to_serve() {
         return;
     };
 
-    let refused = serve(at, config.service(), std::future::ready(())).await;
+    let refused = serve(at, routes(config.service()), std::future::ready(())).await;
 
     assert_eq!(refused, ExitCode::FAILURE);
+}
+
+#[tokio::test]
+async fn the_plex_route_is_answered_on_its_own_port_alone() {
+    let fake = upstream(Vec::new()).await;
+    let config = Config::new("plex-on-the-routes").with_plex(
+        &fake,
+        lemonfiber_ports::service::PlexLink::Managed,
+        Some(crate::fake::PLEX_TOKEN),
+        Vec::new(),
+    );
+
+    let answered = ask(
+        config.service(),
+        Method::GET,
+        "/plex/library/sections",
+        &[("X-Plex-Token", crate::fake::PLEX_TOKEN)],
+        Body::empty(),
+    )
+    .await;
+
+    assert_eq!(answered.status, StatusCode::FORBIDDEN);
+    assert!(fake.all().is_empty());
+    assert_eq!(config.recorded(), ["GET /plex/library/sections"]);
 }

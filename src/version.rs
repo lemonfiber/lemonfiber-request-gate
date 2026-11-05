@@ -14,14 +14,14 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 
 use crate::upstream::{Reach, Stop};
-use crate::{arr, jellyfin};
+use crate::{arr, jellyfin, plex};
 
 /// What a route's upstream answered when asked its version.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Verdict {
     /// A version the gate forwards to.
     Supported,
-    /// The media server's version, which is none of its route's majors.
+    /// The media server and its version, which is none of its route's majors.
     Unsupported(String),
 }
 
@@ -67,24 +67,36 @@ async fn asked(reach: &Reach<'_>) -> Result<Verdict, Stop> {
             reach.read(arr::status(reach)?).await?;
             Ok(Verdict::Supported)
         }
+        Kind::Plex if reach.upstream.majors.is_empty() => Ok(Verdict::Supported),
+        Kind::Plex => {
+            let status = reach.read(plex::status(reach)?).await?;
+            let version = status
+                .pointer("/MediaContainer/version")
+                .and_then(Value::as_str)
+                .ok_or(Stop::Unreachable)?;
+            Ok(verdict("Plex", version, &reach.upstream.majors))
+        }
         Kind::Jellyfin => {
             let info = reach.read(jellyfin::public_info()).await?;
             let version = info
                 .get("Version")
                 .and_then(Value::as_str)
                 .ok_or(Stop::Unreachable)?;
-            let major = version
-                .split('.')
-                .next()
-                .and_then(|first| first.parse::<u32>().ok());
-            Ok(
-                if major.is_some_and(|major| reach.upstream.majors.contains(&major)) {
-                    Verdict::Supported
-                } else {
-                    Verdict::Unsupported(version.to_owned())
-                },
-            )
+            Ok(verdict("Jellyfin", version, &reach.upstream.majors))
         }
+    }
+}
+
+/// Whether `version` of the media server `named` has a first number that is one of `majors`.
+fn verdict(named: &str, version: &str, majors: &[u32]) -> Verdict {
+    let major = version
+        .split('.')
+        .next()
+        .and_then(|first| first.parse::<u32>().ok());
+    if major.is_some_and(|major| majors.contains(&major)) {
+        Verdict::Supported
+    } else {
+        Verdict::Unsupported(format!("{named} {version}"))
     }
 }
 
@@ -97,7 +109,7 @@ fn unanswered(stop: Stop) -> Response {
     }
 }
 
-/// The answer to every call on a route whose media server runs `version`.
+/// The answer to every call on a route whose media server runs `version`, named with it.
 fn unsupported(version: &str) -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
@@ -105,7 +117,7 @@ fn unsupported(version: &str) -> Response {
             header::CONTENT_TYPE,
             HeaderValue::from_static("text/plain; charset=utf-8"),
         )],
-        format!("Jellyfin {version} is not a version this gate supports"),
+        format!("{version} is not a version this gate supports"),
     )
         .into_response()
 }

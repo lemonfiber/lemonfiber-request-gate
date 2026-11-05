@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// The token itself goes to whoever presents it and nowhere else, so a copy of a file
 /// that holds its hash yields nothing that can be presented.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TokenHash(String);
 
