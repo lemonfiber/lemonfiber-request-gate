@@ -12,6 +12,7 @@
 //!
 //! The gate listens on [`PORT`] inside its own networks and publishes nothing.
 
+use lemonfiber_ports::service::PlexLink;
 use serde::{Deserialize, Serialize};
 
 use super::shape::written;
@@ -58,6 +59,8 @@ pub enum Kind {
     Radarr,
     /// The media server.
     Jellyfin,
+    /// Plex as the media server, answered in its own API on a port of its own.
+    Plex,
 }
 
 /// The credential the gate presents upstream.
@@ -108,6 +111,10 @@ pub struct Upstream {
     /// port may present, the only ones the gate accepts there. None on the \*arr routes.
     #[serde(default, skip_serializing_if = "Pins::is_empty")]
     pub pins: Pins,
+    /// On the Plex route, how the request service is linked to Plex: what the route admits
+    /// and what the gate answers for plex.tv. None on every other route.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<PlexLink>,
 }
 
 /// Every route the gate answers, as the core writes them.
@@ -127,6 +134,12 @@ impl Upstreams {
             format: FORMAT,
             upstreams,
         }
+    }
+
+    /// The Plex route, where there is one.
+    #[must_use]
+    pub fn plex(&self) -> Option<&Upstream> {
+        self.upstreams.iter().find(|one| one.kind == Kind::Plex)
     }
 
     /// The route answering under `route`, matched as the upstreams match a path:

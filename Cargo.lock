@@ -685,7 +685,7 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 [[package]]
 name = "lemonfiber-adapter-kit"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=73539d17ce7497324a03032861dcd4dfdd451f6f#73539d17ce7497324a03032861dcd4dfdd451f6f"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
 dependencies = [
  "async-trait",
  "axum",
@@ -705,7 +705,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-contract"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=73539d17ce7497324a03032861dcd4dfdd451f6f#73539d17ce7497324a03032861dcd4dfdd451f6f"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
 dependencies = [
  "async-trait",
  "lemonfiber-ports",
@@ -719,7 +719,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-error"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=73539d17ce7497324a03032861dcd4dfdd451f6f#73539d17ce7497324a03032861dcd4dfdd451f6f"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
 dependencies = [
  "schemars",
  "serde",
@@ -728,7 +728,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-manifest"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=73539d17ce7497324a03032861dcd4dfdd451f6f#73539d17ce7497324a03032861dcd4dfdd451f6f"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
 dependencies = [
  "schemars",
  "serde",
@@ -740,7 +740,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-pinned"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=73539d17ce7497324a03032861dcd4dfdd451f6f#73539d17ce7497324a03032861dcd4dfdd451f6f"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
 dependencies = [
  "axum",
  "futures-util",
@@ -757,7 +757,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-ports"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=73539d17ce7497324a03032861dcd4dfdd451f6f#73539d17ce7497324a03032861dcd4dfdd451f6f"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
 dependencies = [
  "async-trait",
  "base64",
@@ -780,15 +780,21 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
+ "hyper",
+ "hyper-util",
  "lemonfiber-adapter-kit",
  "lemonfiber-contract",
  "lemonfiber-pinned",
  "lemonfiber-ports",
+ "rcgen",
  "reqwest",
  "ring",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-rustls",
  "tower",
  "url",
 ]
@@ -924,6 +930,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
+name = "pem"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d354a98a3d1251555de99e8fdd8afda05573c31b82f59063a7b0a29b5527f120"
+dependencies = [
+ "base64",
+ "serde_core",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -990,6 +1006,7 @@ version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8774e05a7d0de114588e6a28fe7e71694b82614ed569d86d8b389dfbc98b8ad8"
 dependencies = [
+ "pem",
  "ring",
  "rustls-pki-types",
  "time",

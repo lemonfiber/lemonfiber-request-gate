@@ -16,10 +16,12 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::asked::Asked;
 use crate::files::{Files, Routes};
+use crate::plextv::PlexTv;
 use crate::settings::Settings;
 use crate::upstream::{passed, Plan, Reach, Stop};
 use crate::version::Versions;
-use crate::{arr, jellyfin};
+use crate::{arr, jellyfin, plex, plextv};
+use lemonfiber_ports::service::PlexLink;
 
 /// The path the image's health check asks.
 const HEALTH: &str = "/health";
@@ -35,16 +37,28 @@ pub(crate) struct Service {
     client: reqwest::Client,
     pinned: tokio::sync::Mutex<Option<(Pins, reqwest::Client)>>,
     versions: Versions,
+    plex_tv: PlexTv,
 }
 
 impl Service {
     /// A service over `settings`, sending every call to a curator with `client`.
     pub(crate) fn new(settings: Settings, client: reqwest::Client) -> Arc<Self> {
+        Self::reaching(settings, client, plextv::BASE)
+    }
+
+    /// A service over `settings`, sending every call with `client`, that reaches plex.tv at
+    /// `plex_tv`.
+    pub(crate) fn reaching(
+        settings: Settings,
+        client: reqwest::Client,
+        plex_tv: &str,
+    ) -> Arc<Self> {
         Arc::new(Self {
             files: Files::new(settings.config),
             client,
             pinned: tokio::sync::Mutex::new(None),
             versions: Versions::default(),
+            plex_tv: PlexTv::at(plex_tv),
         })
     }
 
@@ -52,7 +66,7 @@ impl Service {
     /// reaches it only over TLS to a certificate its route pins, made once for those pins;
     /// nothing where it pins none.
     async fn client_for(&self, upstream: &Upstream) -> Option<reqwest::Client> {
-        if upstream.kind != Kind::Jellyfin {
+        if !matches!(upstream.kind, Kind::Jellyfin | Kind::Plex) {
             return Some(self.client.clone());
         }
         let mut pinned = self.pinned.lock().await;
@@ -82,10 +96,20 @@ pub(crate) fn routes(service: Arc<Service>) -> Router {
     Router::new().fallback(answer).with_state(service)
 }
 
-/// Serve [`routes`] on `at` until `stopped` resolves.
+/// The Plex route, answered on a port of its own with no path segment.
+pub(crate) fn plex_routes(service: Arc<Service>) -> Router {
+    Router::new().fallback(answer_plex).with_state(service)
+}
+
+/// plex.tv's front, answered in `fronted` mode.
+pub(crate) fn front_routes(service: Arc<Service>) -> Router {
+    Router::new().fallback(answer_front).with_state(service)
+}
+
+/// Serve `router` on `at` until `stopped` resolves.
 pub(crate) async fn serve(
     at: SocketAddr,
-    service: Arc<Service>,
+    router: Router,
     stopped: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> ExitCode {
     let listener = match TcpListener::bind(at).await {
@@ -95,7 +119,7 @@ pub(crate) async fn serve(
             return ExitCode::FAILURE;
         }
     };
-    axum::serve(listener, routes(service))
+    axum::serve(listener, router)
         .with_graceful_shutdown(stopped)
         .await
         .map_or(ExitCode::FAILURE, |()| ExitCode::SUCCESS)
@@ -107,6 +131,8 @@ enum Listed {
     Arr(arr::Call),
     /// On the Jellyfin route.
     Jellyfin(jellyfin::Call),
+    /// On the Plex route.
+    Plex(plex::Call),
 }
 
 /// The answer to one call.
@@ -140,23 +166,128 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
     let listed = match upstream.kind {
         Kind::Sonarr | Kind::Radarr => arr::listed(upstream.kind, &asked).map(Listed::Arr),
         Kind::Jellyfin => jellyfin::listed(&asked).map(Listed::Jellyfin),
+        Kind::Plex => None,
     };
     let Some(listed) = listed else {
         return refused(&service, &asked).await;
     };
 
     let token = match &listed {
-        Listed::Arr(_) => Some(asked.query.one(arr::TOKEN).ok().flatten()),
         Listed::Jellyfin(call) => call
             .needs_token()
             .then(|| asked.authorisation.get(jellyfin::TOKEN)),
+        _ => Some(asked.query.one(arr::TOKEN).ok().flatten()),
     };
     if let Some(token) = token {
         if !service.files.accepts(&upstream.route, token).await {
             return StatusCode::UNAUTHORIZED.into_response();
         }
     }
+    carried(&service, upstream, &asked, listed).await
+}
 
+/// The answer to one call on the Plex route, made to its own port.
+///
+/// It is answered as every route's call is, save that the route is the Plex route
+/// whatever the path, and the token it admits is the one its mode names: the request
+/// service's own account's in `managed`, the gate token in `fronted`, and in `owner` one
+/// plex.tv answers as the account that claimed Plex.
+async fn answer_plex(State(service): State<Arc<Service>>, request: Request) -> Response {
+    let (parts, body) = request.into_parts();
+    if parts.method == Method::GET && parts.uri.path() == HEALTH {
+        return StatusCode::OK.into_response();
+    }
+    let upstreams = match service.files.upstreams().await {
+        Routes::Written(upstreams) => upstreams,
+        Routes::Unwritten => return StatusCode::FORBIDDEN.into_response(),
+        Routes::Unreadable => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    let Some(upstream) = upstreams.plex() else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
+    let asked = Asked::on(
+        &upstream.route,
+        parts.method,
+        &parts.uri,
+        &parts.headers,
+        to_bytes(body, BODY).await.ok(),
+    );
+    let Some(call) = plex::listed(&asked) else {
+        return refused(&service, &asked).await;
+    };
+    if !admitted(&service, upstream, plex::token(&asked)).await {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    carried(&service, upstream, &asked, Listed::Plex(call)).await
+}
+
+/// Whether the Plex route `upstream` admits `token`.
+async fn admitted(service: &Service, upstream: &Upstream, token: Option<&str>) -> bool {
+    let Some(token) = token else {
+        return false;
+    };
+    match &upstream.link {
+        Some(PlexLink::Owner { account }) => service
+            .plex_tv
+            .owner(&service.client, token)
+            .await
+            .is_ok_and(|owner| owner.as_deref() == Some(account.as_str())),
+        _ => service.files.accepts(&upstream.route, Some(token)).await,
+    }
+}
+
+/// The answer to one call made of plex.tv, which reaches the gate in `fronted` mode.
+///
+/// A call the list names, asked with the gate token, is answered from what the core
+/// applied on the Plex route. A member's own sign-in, asked with any other token, is
+/// passed on to plex.tv. Every other call is refused, sent nowhere, and recorded.
+async fn answer_front(State(service): State<Arc<Service>>, request: Request) -> Response {
+    let (parts, body) = request.into_parts();
+    let host = parts
+        .headers
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| parts.uri.host())
+        .map(str::to_owned);
+    let asked = Asked::on(
+        plextv::ROUTE,
+        parts.method,
+        &parts.uri,
+        &parts.headers,
+        to_bytes(body, BODY).await.ok(),
+    );
+    let Routes::Written(upstreams) = service.files.upstreams().await else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
+    let (Some(upstream), Some(call)) = (upstreams.plex(), plextv::listed(&asked, host.as_deref()))
+    else {
+        return refused(&service, &asked).await;
+    };
+    let Some(token) = plex::token(&asked) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let gate_token = service.files.accepts(&upstream.route, Some(token)).await;
+    let answer = match (gate_token, call, &upstream.link) {
+        (true, call, Some(link)) => plextv::answered(call, token, link),
+        (false, plextv::Call::Account, Some(PlexLink::Fronted { .. })) => {
+            Some(service.plex_tv.passed_on(&service.client, token).await)
+        }
+        _ => None,
+    };
+    match answer {
+        Some(answer) => answer,
+        None => refused(&service, &asked).await,
+    }
+}
+
+/// The answer to `listed`, a call on `upstream` the gate admitted: built and sent, a
+/// removal recorded first, or answered by the gate itself.
+async fn carried(
+    service: &Service,
+    upstream: &Upstream,
+    asked: &Asked,
+    listed: Listed,
+) -> Response {
     let Some(client) = service.client_for(upstream).await else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
@@ -168,8 +299,9 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
         return answer;
     }
     let plan = match listed {
-        Listed::Arr(call) => call.plan(&reach, &asked).await,
-        Listed::Jellyfin(call) => call.plan(&reach, &asked).await,
+        Listed::Arr(call) => call.plan(&reach, asked).await,
+        Listed::Jellyfin(call) => call.plan(&reach, asked).await,
+        Listed::Plex(call) => call.plan(&reach, asked),
     };
     match plan {
         Ok(Plan::Forward(built)) => sent(reach.send(built).await),
@@ -190,7 +322,7 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
             sent(reach.send(built).await)
         }
         Ok(Plan::Answer(response)) => response,
-        Err(stop) => stopped(&service, &asked, stop).await,
+        Err(stop) => stopped(service, asked, stop).await,
     }
 }
 

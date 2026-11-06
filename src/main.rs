@@ -11,8 +11,11 @@ mod asked;
 mod fake;
 mod files;
 mod formats;
+mod front;
 mod holding;
 mod jellyfin;
+mod plex;
+mod plextv;
 mod serving;
 mod settings;
 mod shape;
@@ -30,10 +33,42 @@ const LISTEN: SocketAddr = SocketAddr::new(
     crate::formats::gate::PORT,
 );
 
+/// Where the gate answers the Plex route inside its container, in Plex's own API.
+const PLEX: SocketAddr = SocketAddr::new(
+    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+    lemonfiber_ports::service::PLEX_PORT,
+);
+
+/// Where the gate answers plex.tv's front over TLS inside its container, which the request
+/// service reaches by plex.tv's own names in `fronted` mode.
+const FRONT: SocketAddr =
+    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 443);
+
 /// Where the gate speaks `request.gate` inside its container, which the stack publishes
 /// on loopback alone.
 const CONTRACT: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 5058);
+
+/// Answer plex.tv's front over TLS on `at`, each connection on the certificate beneath
+/// `config` as it is then, until a connection cannot be accepted; why it stopped.
+async fn fronting(
+    at: SocketAddr,
+    config: std::path::PathBuf,
+    router: axum::Router,
+) -> std::io::Error {
+    let listener = match tokio::net::TcpListener::bind(at).await {
+        Ok(listener) => listener,
+        Err(error) => return error,
+    };
+    loop {
+        let stream = match listener.accept().await {
+            Ok((stream, _)) => stream,
+            Err(error) => return error,
+        };
+        let (config, router) = (config.clone(), router.clone());
+        tokio::spawn(async move { front::connection(stream, &config, router).await });
+    }
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -53,8 +88,15 @@ async fn main() -> ExitCode {
             let stopped = async {
                 let _ = tokio::signal::ctrl_c().await;
             };
+            let plex = serving::plex_routes(std::sync::Arc::clone(&service));
+            let front = serving::front_routes(std::sync::Arc::clone(&service));
             tokio::select! {
-                code = serving::serve(LISTEN, service, stopped) => code,
+                code = serving::serve(LISTEN, serving::routes(service), stopped) => code,
+                code = serving::serve(PLEX, plex, std::future::pending()) => code,
+                stopped = fronting(FRONT, config.clone(), front) => {
+                    eprintln!("request-gate: plex.tv's front is not answered on {FRONT}: {stopped}");
+                    ExitCode::FAILURE
+                }
                 stopped = speaking::serve(CONTRACT, &config) => {
                     eprintln!("request-gate: request.gate is not answered on {CONTRACT}: {stopped:?}");
                     ExitCode::FAILURE

@@ -23,6 +23,8 @@ pub(crate) struct Asked {
     pub(crate) query: Query,
     /// The fields of its `Authorization: MediaBrowser …` header.
     pub(crate) authorisation: Fields,
+    /// Its headers, of which the list reads only those it names.
+    pub(crate) headers: HeaderMap,
     /// Its body, where it was no larger than the gate reads.
     pub(crate) body: Option<Bytes>,
 }
@@ -30,19 +32,48 @@ pub(crate) struct Asked {
 impl Asked {
     /// The call `method` made to `uri` with `headers` and `body`.
     pub(crate) fn new(method: Method, uri: &Uri, headers: &HeaderMap, body: Option<Bytes>) -> Self {
-        let path = uri.path().to_owned();
-        let mut segments = path.split('/').skip(1);
+        let mut segments = uri.path().split('/').skip(1);
         let route = segments.next().unwrap_or_default().to_owned();
+        let rest: Vec<&str> = segments.collect();
+        Self::made(method, uri, headers, body, route, &rest)
+    }
+
+    /// The call `method` made to `uri` with `headers` and `body` on a route that answers
+    /// on a port of its own, `route`, so that every segment of its path is the call's.
+    pub(crate) fn on(
+        route: &str,
+        method: Method,
+        uri: &Uri,
+        headers: &HeaderMap,
+        body: Option<Bytes>,
+    ) -> Self {
+        let segments: Vec<&str> = uri.path().split('/').skip(1).collect();
+        Self::made(method, uri, headers, body, route.to_owned(), &segments)
+    }
+
+    fn made(
+        method: Method,
+        uri: &Uri,
+        headers: &HeaderMap,
+        body: Option<Bytes>,
+        route: String,
+        segments: &[&str],
+    ) -> Self {
+        let path = uri.path().to_owned();
         Self {
             method,
             route,
-            segments: segments.map(str::to_ascii_lowercase).collect(),
+            segments: segments
+                .iter()
+                .map(|one| one.to_ascii_lowercase())
+                .collect(),
             query: Query::parse(uri.query()),
             authorisation: Fields::of(
                 headers
                     .get(header::AUTHORIZATION)
                     .and_then(|value| value.to_str().ok()),
             ),
+            headers: headers.clone(),
             body,
             path,
         }
