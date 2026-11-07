@@ -4,12 +4,12 @@ use super::{
 };
 use crate::formats::{Pins, TokenHash};
 
-fn sonarr() -> Upstream {
+fn curator() -> Upstream {
     Upstream {
-        route: "sonarr".to_owned(),
-        kind: Kind::Sonarr,
-        address: "http://sonarr:8989".to_owned(),
-        credential: Credential::new("the-sonarr-key"),
+        route: "tv".to_owned(),
+        kind: Kind::Tv,
+        address: "http://sonarr-adapter:5058".to_owned(),
+        credential: Credential::new("the-tv-key"),
         majors: Vec::new(),
         pins: Pins::default(),
         link: None,
@@ -38,24 +38,21 @@ fn the_files_have_their_names_and_the_gate_its_port() {
 
 #[test]
 fn upstreams_read_back_and_find_a_route_whatever_its_case() {
-    let upstreams = Upstreams::of(vec![sonarr()]);
+    let upstreams = Upstreams::of(vec![curator()]);
     let read = Upstreams::read(&upstreams.written());
 
     assert_eq!(read.as_ref().ok(), Some(&upstreams));
+    assert_eq!(upstreams.route("TV").map(|one| one.kind), Some(Kind::Tv));
+    assert!(upstreams.route("movies").is_none());
     assert_eq!(
-        upstreams.route("SONARR").map(|one| one.kind),
-        Some(Kind::Sonarr)
-    );
-    assert!(upstreams.route("radarr").is_none());
-    assert_eq!(
-        upstreams.route("sonarr").map(|one| one.credential.reveal()),
-        Some("the-sonarr-key")
+        upstreams.route("tv").map(|one| one.credential.reveal()),
+        Some("the-tv-key")
     );
 }
 
 #[test]
-fn a_route_carries_its_majors_and_an_arr_route_none() {
-    let upstreams = Upstreams::of(vec![sonarr(), jellyfin()]);
+fn a_route_carries_its_majors_and_a_curators_route_none() {
+    let upstreams = Upstreams::of(vec![curator(), jellyfin()]);
     let written = upstreams.written();
 
     assert_eq!(Upstreams::read(&written).ok(), Some(upstreams.clone()));
@@ -67,8 +64,8 @@ fn a_route_carries_its_majors_and_an_arr_route_none() {
 }
 
 #[test]
-fn the_media_servers_route_carries_its_pins_an_arr_route_none_and_an_older_file_reads() {
-    let upstreams = Upstreams::of(vec![sonarr(), jellyfin()]);
+fn the_media_servers_route_carries_its_pins_a_curators_route_none_and_an_older_file_reads() {
+    let upstreams = Upstreams::of(vec![curator(), jellyfin()]);
     let written = upstreams.written();
 
     assert_eq!(written.matches("\"pins\"").count(), 1, "{written}");
@@ -98,9 +95,9 @@ fn the_media_servers_route_carries_its_pins_an_arr_route_none_and_an_older_file_
 
 #[test]
 fn a_credential_is_withheld_from_debug() {
-    let shown = format!("{:?}", sonarr());
+    let shown = format!("{:?}", curator());
 
-    assert!(!shown.contains("the-sonarr-key"), "{shown}");
+    assert!(!shown.contains("the-tv-key"), "{shown}");
     assert!(shown.contains("withheld"), "{shown}");
 }
 
@@ -108,18 +105,18 @@ fn a_credential_is_withheld_from_debug() {
 fn a_route_accepts_only_its_own_tokens_and_both_while_one_replaces_the_other() {
     let tokens = Tokens::of(vec![
         Accepted {
-            route: "sonarr".to_owned(),
+            route: "tv".to_owned(),
             tokens: vec![TokenHash::of("old"), TokenHash::of("new")],
         },
         Accepted {
-            route: "radarr".to_owned(),
+            route: "movies".to_owned(),
             tokens: vec![TokenHash::of("films")],
         },
     ]);
 
-    assert!(tokens.accepts("sonarr", "old"));
-    assert!(tokens.accepts("Sonarr", "new"));
-    assert!(!tokens.accepts("sonarr", "films"));
+    assert!(tokens.accepts("tv", "old"));
+    assert!(tokens.accepts("Tv", "new"));
+    assert!(!tokens.accepts("tv", "films"));
     assert!(!tokens.accepts("jellyfin", "old"));
     assert_eq!(Tokens::read(&tokens.written()).ok(), Some(tokens.clone()));
     assert!(!tokens.written().contains("\"old\""));
@@ -130,17 +127,17 @@ fn the_record_numbers_its_entries_and_keeps_no_query_string() {
     let record = Record::default()
         .with(
             10,
-            "radarr",
+            "movies",
             "DELETE",
-            "/radarr/api/v3/movie/7?deleteFiles=true",
+            "/movies/api/v3/movie/7?deleteFiles=true",
             Outcome::Removed,
             Kept::standard(),
         )
         .with(
             11,
-            "sonarr",
+            "tv",
             "POST",
-            "/sonarr/api/v3/tag",
+            "/tv/api/v3/tag",
             Outcome::Refused,
             Kept::standard(),
         );
@@ -151,7 +148,7 @@ fn the_record_numbers_its_entries_and_keeps_no_query_string() {
     );
     assert_eq!(
         record.entries.first().map(|one| one.path.as_str()),
-        Some("/radarr/api/v3/movie/7")
+        Some("/movies/api/v3/movie/7")
     );
     assert_eq!(Record::read(&record.written()).ok(), Some(record));
 }
@@ -162,9 +159,9 @@ fn the_record_keeps_only_what_it_may_and_says_what_fell_off() {
     for at in 0..1005 {
         record = record.with(
             at,
-            "sonarr",
+            "tv",
             "POST",
-            "/sonarr/api/v3/tag",
+            "/tv/api/v3/tag",
             Outcome::Refused,
             Kept::standard(),
         );
@@ -195,4 +192,24 @@ fn a_file_in_another_format_or_shape_is_refused() {
     assert!(Tokens::read("[]").is_err());
     assert!(Record::read(&format!(r#"{{"format":{},"entries":[]}}"#, FORMAT + 1)).is_err());
     assert!(Record::read("[]").is_err());
+}
+
+#[test]
+fn a_curators_route_names_the_media_it_files_and_the_media_servers_none() {
+    use lemonfiber_ports::media;
+
+    assert_eq!(Kind::Tv.media(), Some(media::Kind::Tv));
+    assert_eq!(Kind::Movies.media(), Some(media::Kind::Movies));
+    for server in [Kind::Jellyfin, Kind::Emby, Kind::Plex] {
+        assert_eq!(server.media(), None, "{server:?}");
+    }
+}
+
+#[test]
+fn a_route_written_for_an_arr_itself_is_not_read() {
+    let written = Upstreams::of(vec![curator()]).written();
+    let older = written.replace("\"tv\"", "\"sonarr\"");
+
+    assert!(older.contains("\"sonarr\""), "{older}");
+    assert!(Upstreams::read(&older).is_err());
 }

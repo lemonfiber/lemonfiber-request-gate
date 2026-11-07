@@ -1,93 +1,116 @@
-//! What crosses the gate: no call off the list, none of the request service's
-//! headers, and the upstream's answer as it answered.
-
-use axum::body::Body;
 use axum::http::{Method, StatusCode};
+use lemonfiber_contract::wire::Kind;
 use serde_json::json;
 
-use super::{call, gate, only};
-use crate::fake::{ask, json, KEY, TOKEN};
+use super::{asked, call, gate};
+use crate::fake::{curate_refused, curated, MOVIES_ROUTE, TV_ROUTE};
 
 #[tokio::test]
-async fn a_call_off_the_list_or_on_the_other_arrs_route_is_refused() {
-    let (config, fake) = gate("unlisted", Vec::new()).await;
-    let refused = [
-        (Method::POST, "sonarr", "/tag"),
-        (Method::PUT, "radarr", "/tag/1"),
-        (Method::GET, "sonarr", "/indexer"),
-        (Method::POST, "radarr", "/downloadclient"),
-        (Method::DELETE, "radarr", "/movie/abc"),
-        (Method::GET, "radarr", "/movie/1/extra"),
-        (Method::GET, "sonarr", "/movie"),
-        (Method::POST, "sonarr", "/movie"),
-        (Method::DELETE, "sonarr", "/movie/1"),
-        (Method::GET, "radarr", "/series"),
-        (Method::GET, "radarr", "/episode"),
-        (Method::GET, "radarr", "/languageprofile"),
-        (Method::PUT, "radarr", "/episode/monitor"),
-        (Method::DELETE, "radarr", "/series/1"),
-        (Method::GET, "sonarr", "/series/x"),
-        (Method::PUT, "sonarr", "/system/status"),
-    ];
+async fn a_call_off_the_list_or_on_the_other_routes_list_is_refused_and_recorded() {
+    let (config, fake) = gate("off-the-list", Vec::new()).await;
 
-    for (method, route, path) in refused.clone() {
+    for (method, route, path) in [
+        (Method::GET, TV_ROUTE, "/languageprofile"),
+        (Method::PUT, TV_ROUTE, "/episode/monitor"),
+        (Method::POST, TV_ROUTE, "/tag"),
+        (Method::GET, TV_ROUTE, "/movie"),
+        (Method::GET, MOVIES_ROUTE, "/series"),
+        (Method::GET, MOVIES_ROUTE, "/episode"),
+        (Method::GET, TV_ROUTE, "/series/abc"),
+        (Method::GET, TV_ROUTE, "/series/99999999999999999999"),
+        (Method::DELETE, MOVIES_ROUTE, "/movie/-1"),
+        (Method::GET, TV_ROUTE, "/series/12/extra"),
+        (Method::PATCH, TV_ROUTE, "/series"),
+    ] {
         let answered = call(&config, method.clone(), route, path, "", None).await;
         assert_eq!(
             answered.status,
             StatusCode::FORBIDDEN,
-            "{method} {route} {path}"
+            "{method} {route}{path}"
         );
     }
-    let off_the_api = ask(
+    let unversioned = crate::fake::ask(
         config.service(),
         Method::GET,
-        &format!("/sonarr/api/v2/system/status?apikey={TOKEN}"),
+        &format!("/tv/api/v4/system/status?apikey={}", crate::fake::TV_TOKEN),
         &[],
-        Body::empty(),
+        axum::body::Body::empty(),
     )
     .await;
 
-    assert_eq!(off_the_api.status, StatusCode::FORBIDDEN);
-    assert!(fake.seen().is_empty());
-    assert_eq!(config.recorded().len(), refused.len() + 1);
+    assert_eq!(unversioned.status, StatusCode::FORBIDDEN);
+    assert_eq!(config.recorded().len(), 12);
+    assert!(fake.all().is_empty());
 }
 
 #[tokio::test]
-async fn the_request_services_headers_stay_behind() {
-    let (config, fake) = gate(
-        "headers",
-        vec![json(Method::GET, "/api/v3/tag", &json!({}))],
-    )
-    .await;
+async fn a_path_is_matched_whatever_its_case() {
+    let (config, _fake) = gate("cased", Vec::new()).await;
 
-    let answered = ask(
-        config.service(),
-        Method::GET,
-        &format!("/sonarr/api/v3/tag?apikey={TOKEN}"),
-        &[
-            ("x-api-key", TOKEN),
-            ("authorization", "Basic YWRtaW46YWRtaW4="),
-            ("cookie", "session=1"),
-            ("x-forwarded-for", "192.168.1.20"),
-        ],
-        Body::empty(),
-    )
-    .await;
+    let answered = call(&config, Method::GET, "TV", "/System/Status", "", None).await;
 
     assert_eq!(answered.status, StatusCode::OK);
-    let sent = only(&fake, "GET", "/api/v3/tag");
-    assert_eq!(sent.header("x-api-key"), Some(KEY));
-    for header in ["authorization", "cookie", "x-forwarded-for"] {
-        assert_eq!(sent.header(header), None, "{header}");
-    }
 }
 
 #[tokio::test]
-async fn what_the_upstream_answers_a_call_goes_back_as_it_answered() {
-    let (config, _) = gate("not-found", Vec::new()).await;
+async fn a_curator_that_does_not_take_requests_is_answered_503_naming_what_it_files() {
+    let (config, fake) = gate(
+        "untaken",
+        vec![
+            curate_refused("titles", Kind::Unsupported),
+            curate_refused("quality_profiles", Kind::Unsupported),
+        ],
+    )
+    .await;
 
-    let answered = call(&config, Method::GET, "radarr", "/movie/9", "", None).await;
+    let series = call(&config, Method::GET, TV_ROUTE, "/series", "", None).await;
+    let films = call(
+        &config,
+        Method::GET,
+        MOVIES_ROUTE,
+        "/qualityprofile",
+        "",
+        None,
+    )
+    .await;
 
-    assert_eq!(answered.status, StatusCode::NOT_FOUND);
+    assert_eq!(series.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(series.body, "The curator filing tv does not take requests");
+    assert_eq!(
+        series
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/plain; charset=utf-8")
+    );
+    assert_eq!(
+        films.body,
+        "The curator filing movies does not take requests"
+    );
+    assert_eq!(asked(&fake, "titles").len(), 1);
     assert!(config.recorded().is_empty());
+}
+
+#[tokio::test]
+async fn a_curator_refusing_otherwise_is_a_bad_gateway() {
+    for kind in [
+        Kind::Refused,
+        Kind::Unavailable,
+        Kind::Unauthorised,
+        Kind::Disallowed,
+        Kind::UnknownOperation,
+    ] {
+        let (config, _fake) = gate(
+            "refused-otherwise",
+            vec![
+                curate_refused("titles", kind),
+                curated("search", &json!(null)),
+            ],
+        )
+        .await;
+
+        let answered = call(&config, Method::GET, TV_ROUTE, "/series", "", None).await;
+
+        assert_eq!(answered.status, StatusCode::BAD_GATEWAY, "{kind:?}");
+    }
 }

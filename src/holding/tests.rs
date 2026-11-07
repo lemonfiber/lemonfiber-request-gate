@@ -1,7 +1,7 @@
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
 
-use crate::formats::gate::{File, Kept, Outcome, Record};
+use crate::formats::gate::{File, Kept, Kind, Outcome, Record, Upstreams};
 use crate::formats::TokenHash;
 use lemonfiber_ports::service::{
     Failure, GateEntry, GateOutcome, GateRecord, Gated, Gating, Target,
@@ -473,4 +473,37 @@ async fn a_plex_route_reached_without_tls_is_refused_and_nothing_is_written() {
         Err(Failure::Refused { detail, .. }) if detail.contains("TLS")
     ));
     assert!(config.read(File::Upstreams).is_empty());
+}
+
+#[tokio::test]
+async fn an_emby_route_is_held_as_emby_reached_over_tls_alone() {
+    let config = Config::new("emby");
+    let holding = config.holding();
+    let emby = Gated {
+        target: Target::Emby { pins: vec![pin()] },
+        ..media("emby", "emby-token")
+    };
+
+    assert!(holding.admit(std::slice::from_ref(&emby)).await.is_ok());
+    let admitted = holding.admitted().await.unwrap_or_default();
+    let plain = Gated {
+        address: "http://emby:8096".to_owned(),
+        ..emby.clone()
+    };
+
+    assert_eq!(
+        admitted
+            .iter()
+            .map(|one| one.target.clone())
+            .collect::<Vec<_>>(),
+        [emby.target]
+    );
+    assert!(matches!(
+        Upstreams::read(&config.read(File::Upstreams)),
+        Ok(read) if read.route("emby").map(|one| one.kind) == Some(Kind::Emby)
+    ));
+    assert!(matches!(
+        holding.admit(&[plain]).await,
+        Err(Failure::Refused { .. })
+    ));
 }

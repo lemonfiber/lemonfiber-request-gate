@@ -58,8 +58,6 @@ impl Built {
 pub(crate) enum Plan {
     /// Send this request, and hand back what the upstream answers.
     Forward(Built),
-    /// Record this removal, then send it and hand back what the upstream answers.
-    Remove(Built),
     /// Answer with this, sending nothing further.
     Answer(Response),
 }
@@ -73,6 +71,8 @@ pub(crate) enum Stop {
     Upstream(StatusCode),
     /// The upstream did not answer, or answered something the gate cannot read.
     Unreachable,
+    /// The curator filing this kind of media answered that it does not take requests.
+    Untaken(lemonfiber_ports::media::Kind),
 }
 
 /// One route's upstream, and the client every call to it is made with.

@@ -1,4 +1,5 @@
-//! The calls the gate answers on the Jellyfin route, and how it builds each.
+//! The calls the gate answers on the Jellyfin route and the Emby route, and how it builds
+//! each. Emby is answered on the same list as Jellyfin, each call in Emby's own API.
 //!
 //! Sign-in calls answer to the member's own credential and carry no token; the gate
 //! sends them under the request service's device, and ends any administrator's session
@@ -16,6 +17,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::{json, Value};
 
 use crate::asked::{Asked, SCHEME};
+use crate::formats::gate::Kind;
 use crate::shape::{fields, object, parameters, Shape};
 use crate::upstream::{kept, passed, Built, Plan, Reach, Stop};
 
@@ -58,8 +60,10 @@ pub(crate) enum Call {
     QuickConnected,
     /// `POST /Users/AuthenticateWithQuickConnect`.
     QuickConnectSignIn,
-    /// `GET` or `HEAD /UserImage`.
+    /// `GET` or `HEAD /UserImage`, on Jellyfin.
     Avatar,
+    /// `GET` or `HEAD /Users/{id}/Images/Primary`, on Emby.
+    UserAvatar(String),
     /// `GET /System/Info`.
     Info,
     /// `GET /Users`.
@@ -72,8 +76,10 @@ pub(crate) enum Call {
     MediaFolders,
     /// `GET /Items`.
     Items,
-    /// `GET /Items/Latest`.
+    /// `GET /Items/Latest`, on Jellyfin.
     Latest,
+    /// `GET /Users/{id}/Items/Latest`, on Emby.
+    UserLatest(String),
     /// `GET /Shows/{id}/Seasons`.
     Seasons(String),
     /// `GET /Shows/{id}/Episodes`.
@@ -86,23 +92,31 @@ pub(crate) enum Call {
     Keys,
 }
 
-/// The call `asked` makes on the Jellyfin route, where it is one on the list.
-pub(crate) fn listed(asked: &Asked) -> Option<Call> {
+/// The call `asked` makes on the route to the media server `kind` names, Jellyfin or Emby,
+/// where it is one on the list.
+pub(crate) fn listed(kind: Kind, asked: &Asked) -> Option<Call> {
     let segments = asked.segments();
+    let emby = kind == Kind::Emby;
     let call = match (asked.method.clone(), segments.as_slice()) {
         (Method::GET, ["system", "info", "public"]) => Call::PublicInfo,
         (Method::POST, ["users", "authenticatebyname"]) => Call::SignIn,
         (Method::POST, ["quickconnect", "initiate"]) => Call::QuickConnect,
         (Method::GET, ["quickconnect", "connect"]) => Call::QuickConnected,
         (Method::POST, ["users", "authenticatewithquickconnect"]) => Call::QuickConnectSignIn,
-        (Method::GET | Method::HEAD, ["userimage"]) => Call::Avatar,
+        (Method::GET | Method::HEAD, ["userimage"]) if !emby => Call::Avatar,
+        (Method::GET | Method::HEAD, ["users", id, "images", "primary"]) if emby => {
+            Call::UserAvatar(identifier(id)?)
+        }
         (Method::GET, ["system", "info"]) => Call::Info,
         (Method::GET, ["users"]) => Call::Users,
         (Method::GET, ["users", id]) => Call::User(identifier(id)?),
         (Method::GET, ["users", id, "views"]) => Call::Views(identifier(id)?),
         (Method::GET, ["library", "mediafolders"]) => Call::MediaFolders,
         (Method::GET, ["items"]) => Call::Items,
-        (Method::GET, ["items", "latest"]) => Call::Latest,
+        (Method::GET, ["items", "latest"]) if !emby => Call::Latest,
+        (Method::GET, ["users", id, "items", "latest"]) if emby => {
+            Call::UserLatest(identifier(id)?)
+        }
         (Method::GET, ["shows", id, "seasons"]) => Call::Seasons(identifier(id)?),
         (Method::GET, ["shows", id, "episodes"]) => Call::Episodes(identifier(id)?),
         (Method::DELETE, ["devices"]) => Call::EndSession,
@@ -143,6 +157,13 @@ const LATEST: &[(&str, Shape)] = &[
     ("userId", Shape::Text),
 ];
 
+/// The parameters a listing of what was added lately carries on Emby, which names the
+/// account in the path.
+const USER_LATEST: &[(&str, Shape)] = &[("Limit", Shape::Text), ("ParentId", Shape::Text)];
+
+/// The one parameter an avatar carries on Emby: the quality it is asked at.
+const USER_AVATAR: &[(&str, Shape)] = &[("quality", Shape::Integer)];
+
 /// The parameters a listing of a season's episodes carries.
 const EPISODES: &[(&str, Shape)] = &[("seasonId", Shape::Text), ("fields", Shape::Text)];
 
@@ -158,6 +179,7 @@ impl Call {
                 | Self::QuickConnected
                 | Self::QuickConnectSignIn
                 | Self::Avatar
+                | Self::UserAvatar(_)
                 | Self::MintKey
                 | Self::Keys
         )
@@ -171,6 +193,10 @@ impl Call {
             Self::Avatar => {
                 Plan::Forward(Built::new(asked.method.clone(), "/UserImage").query(avatar(asked)?))
             }
+            Self::UserAvatar(id) => Plan::Forward(
+                Built::new(asked.method.clone(), format!("/Users/{id}/Images/Primary"))
+                    .query(parameters(query, USER_AVATAR)?),
+            ),
             Self::QuickConnect => Plan::Forward(
                 Built::new(Method::POST, "/QuickConnect/Initiate")
                     .header(header::AUTHORIZATION, device(asked, None)?),
@@ -209,6 +235,10 @@ impl Call {
             }
             Self::Latest => Plan::Forward(
                 keyed(reach, Method::GET, "/Items/Latest")?.query(parameters(query, LATEST)?),
+            ),
+            Self::UserLatest(id) => Plan::Forward(
+                keyed(reach, Method::GET, &format!("/Users/{id}/Items/Latest"))?
+                    .query(parameters(query, USER_LATEST)?),
             ),
             Self::Seasons(id) => {
                 Plan::Forward(keyed(reach, Method::GET, &format!("/Shows/{id}/Seasons"))?)
