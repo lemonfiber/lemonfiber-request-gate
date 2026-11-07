@@ -14,7 +14,9 @@ use axum::Router;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::arr::Curated;
 use crate::asked::Asked;
+use crate::curator::Curator;
 use crate::files::{Files, Routes};
 use crate::plextv::PlexTv;
 use crate::settings::Settings;
@@ -41,7 +43,7 @@ pub(crate) struct Service {
 }
 
 impl Service {
-    /// A service over `settings`, sending every call to a curator with `client`.
+    /// A service over `settings`, sending every call to a curator's adapter with `client`.
     pub(crate) fn new(settings: Settings, client: reqwest::Client) -> Arc<Self> {
         Self::reaching(settings, client, plextv::BASE)
     }
@@ -62,13 +64,10 @@ impl Service {
         })
     }
 
-    /// The client a call to `upstream` is sent with: for the media server, one that
+    /// The client a call to the media server `upstream` reaches is sent with: one that
     /// reaches it only over TLS to a certificate its route pins, made once for those pins;
     /// nothing where it pins none.
     async fn client_for(&self, upstream: &Upstream) -> Option<reqwest::Client> {
-        if !matches!(upstream.kind, Kind::Jellyfin | Kind::Plex) {
-            return Some(self.client.clone());
-        }
         let mut pinned = self.pinned.lock().await;
         if let Some((pins, client)) = pinned.as_ref() {
             if *pins == upstream.pins {
@@ -127,9 +126,15 @@ pub(crate) async fn serve(
 
 /// One call on a route, from the request service.
 enum Listed {
-    /// On a Sonarr or Radarr route.
+    /// On a curator's route.
     Arr(arr::Call),
-    /// On the Jellyfin route.
+    /// On the media server's route.
+    Served(Served),
+}
+
+/// One call on the media server's route.
+enum Served {
+    /// On the Jellyfin or the Emby route.
     Jellyfin(jellyfin::Call),
     /// On the Plex route.
     Plex(plex::Call),
@@ -141,8 +146,9 @@ enum Listed {
 /// nowhere and not recorded; routes it cannot read answer `503`. A call not on its
 /// route's list is refused with `403`, sent nowhere, and recorded.
 /// One on the list without the route's token is answered `401`. One on a route whose
-/// upstream runs a version the gate does not forward to is answered `503`. Every other
-/// is built by the gate and sent, and a removal is recorded before it is.
+/// media server runs a version the gate does not forward to is answered `503`, and so is
+/// one a curator answers it does not take requests by. Every other is built by the gate
+/// and sent, or answered by it, and a removal is recorded before it is asked.
 async fn answer(State(service): State<Arc<Service>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     if parts.method == Method::GET && parts.uri.path() == HEALTH {
@@ -163,17 +169,18 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
     let Some(upstream) = upstreams.route(&asked.route) else {
         return refused(&service, &asked).await;
     };
-    let listed = match upstream.kind {
-        Kind::Sonarr | Kind::Radarr => arr::listed(upstream.kind, &asked).map(Listed::Arr),
-        Kind::Jellyfin => jellyfin::listed(&asked).map(Listed::Jellyfin),
-        Kind::Plex => None,
+    let listed = match (upstream.kind.media(), upstream.kind) {
+        (Some(media), _) => arr::listed(media, &asked).map(Listed::Arr),
+        (None, Kind::Jellyfin | Kind::Emby) => jellyfin::listed(upstream.kind, &asked)
+            .map(|call| Listed::Served(Served::Jellyfin(call))),
+        (None, _) => None,
     };
     let Some(listed) = listed else {
         return refused(&service, &asked).await;
     };
 
     let token = match &listed {
-        Listed::Jellyfin(call) => call
+        Listed::Served(Served::Jellyfin(call)) => call
             .needs_token()
             .then(|| asked.authorisation.get(jellyfin::TOKEN)),
         _ => Some(asked.query.one(arr::TOKEN).ok().flatten()),
@@ -183,7 +190,10 @@ async fn answer(State(service): State<Arc<Service>>, request: Request) -> Respon
             return StatusCode::UNAUTHORIZED.into_response();
         }
     }
-    carried(&service, upstream, &asked, listed).await
+    match listed {
+        Listed::Arr(call) => curated(&service, upstream, &asked, call).await,
+        Listed::Served(call) => carried(&service, upstream, &asked, call).await,
+    }
 }
 
 /// The answer to one call on the Plex route, made to its own port.
@@ -218,7 +228,7 @@ async fn answer_plex(State(service): State<Arc<Service>>, request: Request) -> R
     if !admitted(&service, upstream, plex::token(&asked)).await {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    carried(&service, upstream, &asked, Listed::Plex(call)).await
+    carried(&service, upstream, &asked, Served::Plex(call)).await
 }
 
 /// Whether the Plex route `upstream` admits `token`.
@@ -280,14 +290,51 @@ async fn answer_front(State(service): State<Arc<Service>>, request: Request) -> 
     }
 }
 
-/// The answer to `listed`, a call on `upstream` the gate admitted: built and sent, a
-/// removal recorded first, or answered by the gate itself.
-async fn carried(
+/// The answer to `call`, a call on a curator's route the gate admitted: asked of the
+/// curator's adapter, a removal recorded first, or answered by the gate itself.
+async fn curated(
     service: &Service,
     upstream: &Upstream,
     asked: &Asked,
-    listed: Listed,
+    call: arr::Call,
 ) -> Response {
+    let curator = Curator::of(&service.client, upstream, call.media);
+    let answer = match call.answer(&curator, asked).await {
+        Ok(Curated::Answered(response)) => Ok(response),
+        Ok(Curated::Removal(id)) => {
+            if !removal_recorded(service, asked).await {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            arr::removed(&curator, id).await
+        }
+        Err(stop) => Err(stop),
+    };
+    match answer {
+        Ok(response) => response,
+        Err(stop) => stopped(service, asked, stop).await,
+    }
+}
+
+/// Whether the removal `asked` makes was recorded, which it must be before it is passed on.
+async fn removal_recorded(service: &Service, asked: &Asked) -> bool {
+    let recorded = service
+        .files
+        .record(
+            &asked.route,
+            asked.method.as_str(),
+            &asked.path,
+            Outcome::Removed,
+        )
+        .await;
+    if !recorded {
+        eprintln!("request-gate: a removal could not be recorded, so it was not passed on");
+    }
+    recorded
+}
+
+/// The answer to `call`, a call on the media server's route the gate admitted: built and
+/// sent, or answered by the gate itself.
+async fn carried(service: &Service, upstream: &Upstream, asked: &Asked, call: Served) -> Response {
     let Some(client) = service.client_for(upstream).await else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
@@ -298,29 +345,12 @@ async fn carried(
     if let Err(answer) = service.versions.supported(&reach).await {
         return answer;
     }
-    let plan = match listed {
-        Listed::Arr(call) => call.plan(&reach, asked).await,
-        Listed::Jellyfin(call) => call.plan(&reach, asked).await,
-        Listed::Plex(call) => call.plan(&reach, asked),
+    let plan = match call {
+        Served::Jellyfin(call) => call.plan(&reach, asked).await,
+        Served::Plex(call) => call.plan(&reach, asked),
     };
     match plan {
         Ok(Plan::Forward(built)) => sent(reach.send(built).await),
-        Ok(Plan::Remove(built)) => {
-            let recorded = service
-                .files
-                .record(
-                    &asked.route,
-                    asked.method.as_str(),
-                    &asked.path,
-                    Outcome::Removed,
-                )
-                .await;
-            if !recorded {
-                eprintln!("request-gate: a removal could not be recorded, so it was not passed on");
-                return StatusCode::SERVICE_UNAVAILABLE.into_response();
-            }
-            sent(reach.send(built).await)
-        }
         Ok(Plan::Answer(response)) => response,
         Err(stop) => stopped(service, asked, stop).await,
     }
@@ -337,6 +367,18 @@ async fn stopped(service: &Service, asked: &Asked, stop: Stop) -> Response {
         Stop::Refused => refused(service, asked).await,
         Stop::Upstream(status) => status.into_response(),
         Stop::Unreachable => StatusCode::BAD_GATEWAY.into_response(),
+        Stop::Untaken(media) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_static("text/plain; charset=utf-8"),
+            )],
+            format!(
+                "The curator filing {} does not take requests",
+                media.media_type()
+            ),
+        )
+            .into_response(),
     }
 }
 

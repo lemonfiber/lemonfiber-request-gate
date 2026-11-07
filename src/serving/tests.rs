@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::{answers_ok, healthy, routes, serve};
-use crate::fake::{ask, json, status, upstream, Config, RADARR_TOKEN, TOKEN};
+use crate::fake::{ask, curate, curated, upstream, Config, MOVIES_TOKEN, TV_TOKEN};
 
 #[tokio::test]
 async fn health_answers_ok_with_nothing_written() {
@@ -26,7 +26,7 @@ async fn every_call_is_refused_until_the_core_has_written_the_routes() {
     let config = Config::new("unwritten");
 
     for path in [
-        format!("/sonarr/api/v3/system/status?apikey={TOKEN}"),
+        format!("/tv/api/v3/system/status?apikey={TV_TOKEN}"),
         "/jellyfin/Users/Me".to_owned(),
         "/".to_owned(),
     ] {
@@ -44,7 +44,7 @@ async fn routes_that_cannot_be_read_answer_unavailable() {
     let answered = ask(
         config.service(),
         Method::GET,
-        &format!("/sonarr/api/v3/system/status?apikey={TOKEN}"),
+        &format!("/tv/api/v3/system/status?apikey={TV_TOKEN}"),
         &[],
         Body::empty(),
     )
@@ -93,7 +93,7 @@ async fn a_refusal_is_recorded_without_its_query_string_and_its_token() {
     let answered = ask(
         config.service(),
         Method::POST,
-        &format!("/sonarr/api/v3/tag?apikey={TOKEN}"),
+        &format!("/tv/api/v3/tag?apikey={TV_TOKEN}"),
         &[],
         crate::fake::body(&json!({ "label": "ana" })),
     )
@@ -102,7 +102,7 @@ async fn a_refusal_is_recorded_without_its_query_string_and_its_token() {
     assert_eq!(answered.status, StatusCode::FORBIDDEN);
     assert!(answered.body.is_empty());
     let record = config.read(File::Record);
-    assert!(!record.contains(TOKEN), "{record}");
+    assert!(!record.contains(TV_TOKEN), "{record}");
     assert!(!record.contains("ana"), "{record}");
     let entries = Record::read(&record).unwrap_or_default().entries;
     assert_eq!(
@@ -110,21 +110,21 @@ async fn a_refusal_is_recorded_without_its_query_string_and_its_token() {
             .iter()
             .map(|one| (one.route.as_str(), one.path.as_str(), one.outcome))
             .collect::<Vec<_>>(),
-        [("sonarr", "/sonarr/api/v3/tag", Outcome::Refused)]
+        [("tv", "/tv/api/v3/tag", Outcome::Refused)]
     );
     assert!(fake.seen().is_empty());
 }
 
 #[tokio::test]
 async fn a_listed_call_without_the_routes_token_is_answered_401_and_sent_nowhere() {
-    let fake = upstream(vec![json(Method::GET, "/api/v3/system/status", &json!({}))]).await;
+    let fake = upstream(vec![curated("quality_profiles", &json!([]))]).await;
     let config = Config::new("unauthorised").with_upstream(&fake);
 
     for uri in [
-        "/sonarr/api/v3/system/status".to_owned(),
-        "/sonarr/api/v3/system/status?apikey=wrong".to_owned(),
-        format!("/sonarr/api/v3/system/status?apikey={RADARR_TOKEN}"),
-        format!("/sonarr/api/v3/system/status?apikey={TOKEN}&apikey={TOKEN}"),
+        "/tv/api/v3/qualityprofile".to_owned(),
+        "/tv/api/v3/qualityprofile?apikey=wrong".to_owned(),
+        format!("/tv/api/v3/qualityprofile?apikey={MOVIES_TOKEN}"),
+        format!("/tv/api/v3/qualityprofile?apikey={TV_TOKEN}&apikey={TV_TOKEN}"),
     ] {
         let answered = ask(config.service(), Method::GET, &uri, &[], Body::empty()).await;
         assert_eq!(answered.status, StatusCode::UNAUTHORIZED, "{uri}");
@@ -136,14 +136,14 @@ async fn a_listed_call_without_the_routes_token_is_answered_401_and_sent_nowhere
 
 #[tokio::test]
 async fn a_token_file_that_cannot_be_read_accepts_nothing() {
-    let fake = upstream(vec![json(Method::GET, "/api/v3/system/status", &json!({}))]).await;
+    let fake = upstream(vec![curated("quality_profiles", &json!([]))]).await;
     let config = Config::new("tokens-unreadable").with_upstream(&fake);
     config.write(File::Tokens, "not tokens");
 
     let answered = ask(
         config.service(),
         Method::GET,
-        &format!("/sonarr/api/v3/system/status?apikey={TOKEN}"),
+        &format!("/tv/api/v3/qualityprofile?apikey={TV_TOKEN}"),
         &[],
         Body::empty(),
     )
@@ -154,7 +154,7 @@ async fn a_token_file_that_cannot_be_read_accepts_nothing() {
 }
 
 #[tokio::test]
-async fn an_upstream_that_does_not_answer_is_a_bad_gateway() {
+async fn an_adapter_that_does_not_answer_is_a_bad_gateway() {
     let Ok(listener) = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await else {
         return;
     };
@@ -168,7 +168,7 @@ async fn an_upstream_that_does_not_answer_is_a_bad_gateway() {
     let read = ask(
         config.service(),
         Method::GET,
-        &format!("/sonarr/api/v3/system/status?apikey={TOKEN}"),
+        &format!("/tv/api/v3/qualityprofile?apikey={TV_TOKEN}"),
         &[],
         Body::empty(),
     )
@@ -176,7 +176,7 @@ async fn an_upstream_that_does_not_answer_is_a_bad_gateway() {
     let checked = ask(
         config.service(),
         Method::PUT,
-        &format!("/sonarr/api/v3/series?apikey={TOKEN}"),
+        &format!("/tv/api/v3/series?apikey={TV_TOKEN}"),
         &[],
         crate::fake::body(&json!({ "id": 5 })),
     )
@@ -188,7 +188,7 @@ async fn an_upstream_that_does_not_answer_is_a_bad_gateway() {
 }
 
 #[tokio::test]
-async fn an_upstream_that_goes_away_after_saying_its_version_is_a_bad_gateway() {
+async fn an_answer_outside_the_contract_is_a_bad_gateway() {
     let Ok(listener) = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await else {
         return;
     };
@@ -205,12 +205,12 @@ async fn an_upstream_that_goes_away_after_saying_its_version_is_a_bad_gateway() 
                 .await;
         }
     });
-    let config = Config::new("gone-after-version").with_routes(&address);
+    let config = Config::new("outside-the-contract").with_routes(&address);
 
     let answered = ask(
         config.service(),
         Method::GET,
-        &format!("/sonarr/api/v3/tag?apikey={TOKEN}"),
+        &format!("/tv/api/v3/qualityprofile?apikey={TV_TOKEN}"),
         &[],
         Body::empty(),
     )
@@ -220,36 +220,12 @@ async fn an_upstream_that_goes_away_after_saying_its_version_is_a_bad_gateway() 
 }
 
 #[tokio::test]
-async fn a_read_the_gate_makes_for_its_checks_hands_back_the_upstreams_status() {
-    let fake = upstream(vec![status(
-        Method::GET,
-        "/api/v3/series/5",
-        StatusCode::NOT_FOUND,
-    )])
-    .await;
-    let config = Config::new("check-status").with_upstream(&fake);
-
-    let answered = ask(
-        config.service(),
-        Method::PUT,
-        &format!("/sonarr/api/v3/series?apikey={TOKEN}"),
-        &[],
-        crate::fake::body(&json!({ "id": 5, "monitored": true })),
-    )
-    .await;
-
-    assert_eq!(answered.status, StatusCode::NOT_FOUND);
-    assert!(fake.sent("PUT", "/api/v3/series").is_empty());
-    assert!(config.recorded().is_empty());
-}
-
-#[tokio::test]
-async fn a_redirect_is_handed_back_rather_than_followed() {
-    let elsewhere = upstream(vec![json(Method::GET, "/api/v3/system/status", &json!({}))]).await;
+async fn a_redirect_from_an_adapter_is_not_followed() {
+    let elsewhere = upstream(vec![curated("quality_profiles", &json!([]))]).await;
     let fake = upstream(vec![crate::fake::redirect(
-        Method::GET,
-        "/api/v3/system/status",
-        format!("{}/api/v3/system/status", elsewhere.address),
+        Method::POST,
+        curate("quality_profiles"),
+        format!("{}{}", elsewhere.address, curate("quality_profiles")),
     )])
     .await;
     let config = Config::new("redirect").with_upstream(&fake);
@@ -257,13 +233,13 @@ async fn a_redirect_is_handed_back_rather_than_followed() {
     let answered = ask(
         config.service(),
         Method::GET,
-        &format!("/sonarr/api/v3/system/status?apikey={TOKEN}"),
+        &format!("/tv/api/v3/qualityprofile?apikey={TV_TOKEN}"),
         &[],
         Body::empty(),
     )
     .await;
 
-    assert_eq!(answered.status, StatusCode::FOUND);
+    assert_eq!(answered.status, StatusCode::BAD_GATEWAY);
     assert!(elsewhere.seen().is_empty());
 }
 
@@ -276,7 +252,7 @@ async fn a_body_larger_than_the_gate_reads_is_refused() {
     let answered = ask(
         config.service(),
         Method::POST,
-        &format!("/sonarr/api/v3/command?apikey={TOKEN}"),
+        &format!("/tv/api/v3/command?apikey={TV_TOKEN}"),
         &[],
         Body::from(large),
     )
@@ -287,26 +263,27 @@ async fn a_body_larger_than_the_gate_reads_is_refused() {
 }
 
 #[tokio::test]
-async fn a_removal_is_recorded_and_then_passed_on() {
-    let fake = upstream(vec![status(
-        Method::DELETE,
-        "/api/v3/movie/7",
-        StatusCode::OK,
-    )])
-    .await;
+async fn a_removal_is_recorded_and_then_asked() {
+    let fake = upstream(vec![curated("remove", &json!(null))]).await;
     let config = Config::new("removal").with_upstream(&fake);
 
     let answered = ask(
         config.service(),
         Method::DELETE,
-        &format!("/radarr/api/v3/movie/7?apikey={RADARR_TOKEN}&deleteFiles=true"),
+        &format!(
+            "/movies/api/v3/movie/7?apikey={MOVIES_TOKEN}&deleteFiles=true&addImportExclusion=false"
+        ),
         &[],
         Body::empty(),
     )
     .await;
 
     assert_eq!(answered.status, StatusCode::OK);
-    assert_eq!(fake.sent("DELETE", "/api/v3/movie/7").len(), 1);
+    let asked = fake.sent("POST", curate("remove"));
+    assert_eq!(
+        asked.iter().map(|one| one.body.clone()).collect::<Vec<_>>(),
+        [Some(json!({ "kind": "movies", "id": 7 }))]
+    );
     let entries = Record::read(&config.read(File::Record))
         .unwrap_or_default()
         .entries;
@@ -321,9 +298,9 @@ async fn a_removal_is_recorded_and_then_passed_on() {
             ))
             .collect::<Vec<_>>(),
         [(
-            "radarr",
+            "movies",
             "DELETE",
-            "/radarr/api/v3/movie/7",
+            "/movies/api/v3/movie/7",
             Outcome::Removed
         )]
     );
@@ -331,22 +308,17 @@ async fn a_removal_is_recorded_and_then_passed_on() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn a_removal_that_cannot_be_recorded_is_not_passed_on() {
+async fn a_removal_that_cannot_be_recorded_is_not_asked() {
     use std::os::unix::fs::PermissionsExt;
 
-    let fake = upstream(vec![status(
-        Method::DELETE,
-        "/api/v3/series/5",
-        StatusCode::OK,
-    )])
-    .await;
+    let fake = upstream(vec![curated("remove", &json!(null))]).await;
     let config = Config::new("unrecorded-removal").with_upstream(&fake);
     let _ = std::fs::set_permissions(config.path(), std::fs::Permissions::from_mode(0o555));
 
     let answered = ask(
         config.service(),
         Method::DELETE,
-        &format!("/sonarr/api/v3/series/5?apikey={TOKEN}&deleteFiles=true"),
+        &format!("/tv/api/v3/series/5?apikey={TV_TOKEN}&deleteFiles=true&addImportExclusion=false"),
         &[],
         Body::empty(),
     )
@@ -369,7 +341,7 @@ async fn a_refusal_that_cannot_be_recorded_is_still_refused() {
     let answered = ask(
         config.service(),
         Method::POST,
-        &format!("/sonarr/api/v3/tag?apikey={TOKEN}"),
+        &format!("/tv/api/v3/tag?apikey={TV_TOKEN}"),
         &[],
         Body::empty(),
     )

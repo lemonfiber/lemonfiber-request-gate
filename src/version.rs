@@ -1,9 +1,9 @@
 //! Whether a route's upstream runs a version the gate forwards to.
 //!
-//! An \*arr is supported when it answers its status on the one API the gate speaks.
-//! The media server is supported when the first number of its version is one of the
-//! majors its route names. Each route is asked on the first call that reaches it, and
-//! what it answered holds until the core writes that route differently.
+//! A curator's route speaks `library.curate`, which its adapter answers for whatever the
+//! curator runs. The media server is supported when the first number of its version is
+//! one of the majors its route names. Each route is asked on the first call that reaches
+//! it, and what it answered holds until the core writes that route differently.
 
 use std::collections::HashMap;
 
@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 
 use crate::upstream::{Reach, Stop};
-use crate::{arr, jellyfin, plex};
+use crate::{jellyfin, plex};
 
 /// What a route's upstream answered when asked its version.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,10 +63,7 @@ impl Versions {
 /// Ask `reach`'s upstream its version.
 async fn asked(reach: &Reach<'_>) -> Result<Verdict, Stop> {
     match reach.upstream.kind {
-        Kind::Sonarr | Kind::Radarr => {
-            reach.read(arr::status(reach)?).await?;
-            Ok(Verdict::Supported)
-        }
+        Kind::Tv | Kind::Movies => Ok(Verdict::Supported),
         Kind::Plex if reach.upstream.majors.is_empty() => Ok(Verdict::Supported),
         Kind::Plex => {
             let status = reach.read(plex::status(reach)?).await?;
@@ -76,13 +73,18 @@ async fn asked(reach: &Reach<'_>) -> Result<Verdict, Stop> {
                 .ok_or(Stop::Unreachable)?;
             Ok(verdict("Plex", version, &reach.upstream.majors))
         }
-        Kind::Jellyfin => {
+        Kind::Jellyfin | Kind::Emby => {
             let info = reach.read(jellyfin::public_info()).await?;
             let version = info
                 .get("Version")
                 .and_then(Value::as_str)
                 .ok_or(Stop::Unreachable)?;
-            Ok(verdict("Jellyfin", version, &reach.upstream.majors))
+            let named = if reach.upstream.kind == Kind::Emby {
+                "Emby"
+            } else {
+                "Jellyfin"
+            };
+            Ok(verdict(named, version, &reach.upstream.majors))
         }
     }
 }

@@ -2,8 +2,9 @@
 
 The request gate is a small service inside a [lemonfiber](https://github.com/lemonfiber/lemonfiber)
 media stack. It sits between Seerr, the page where your household asks for films
-and shows, and the services that act on those requests: Sonarr, Radarr and the
-media server, Jellyfin or Plex.
+and shows, and the services that act on those requests: the curators that file
+series and films, such as Sonarr and Radarr, and the media server, Jellyfin, Emby
+or Plex.
 
 This repository builds the container image `ghcr.io/lemonfiber/request-gate`.
 You do not run it yourself: lemonfiber installs it as the plugin `request-gate`,
@@ -12,17 +13,22 @@ from the `plugin.toml` here, and writes its configuration.
 ## Why it exists
 
 Seerr is a household-facing service: everyone at home can reach it. To pass a
-request on, Seerr needs to call Sonarr, Radarr and the media server. Given their
-API keys directly, a fault in Seerr would hand anyone who reached it full control
-of all three.
+request on, Seerr calls a Sonarr for series, a Radarr for films, and the media
+server. Given their API keys directly, a fault in Seerr would hand anyone who
+reached it full control of all of them.
 
-The gate holds those keys instead, and Seerr holds only a token for the gate.
-The gate:
+The gate holds the keys instead, and Seerr holds only a token for the gate. It
+answers Seerr in Sonarr's and Radarr's API on two routes, `/tv` and `/movies`,
+and asks the adapter of whichever curator files that media over lemonfiber's
+`library.curate` contract, under a key lemonfiber minted for the gate on that
+adapter alone. That key opens the operations a request needs and nothing else,
+and the gate never holds a curator's own key. The gate:
 
 - answers a fixed list of calls, such as looking up a film, adding a series,
-  removing one, or signing a household member in to Jellyfin;
-- builds each upstream request itself from the parts of the call it reads,
-  rather than forwarding what Seerr sent;
+  removing one, or signing a household member in to Jellyfin or Emby;
+- builds each request itself from the parts of the call it reads, rather than
+  forwarding what Seerr sent, and answers the system status, the tags, the
+  episode list and a refresh of download tracking itself;
 - refuses every other call and forwards none of it. It records each refusal,
   and each removal it passed on, without tokens, query strings or bodies;
 - reaches the media server only over TLS at its internal TLS port, and sends a
@@ -37,8 +43,8 @@ plex.tv through the gate, the gate answers plex.tv's calls in its place from wha
 lemonfiber hands it, giving every account an address under `plex.invalid` and never
 one your household holds, and passes a member's own Plex sign-in on to plex.tv.
 
-The list of calls is in [`src/arr.rs`](src/arr.rs) (Sonarr and Radarr),
-[`src/jellyfin.rs`](src/jellyfin.rs), [`src/plex.rs`](src/plex.rs) and
+The list of calls is in [`src/arr.rs`](src/arr.rs) (the curators' routes),
+[`src/jellyfin.rs`](src/jellyfin.rs) (Jellyfin and Emby), [`src/plex.rs`](src/plex.rs) and
 [`src/plextv.rs`](src/plextv.rs) (plex.tv).
 
 ## How the stack runs it
@@ -46,7 +52,7 @@ The list of calls is in [`src/arr.rs`](src/arr.rs) (Sonarr and Radarr),
 | | |
 | --- | --- |
 | Listens on | Port 5057 inside its container, on the stack's internal networks only, for the request service; port 32400 for its Plex route, in Plex's own API; port 443 for plex.tv's calls over TLS, which the request service reaches by plex.tv's own names when it is set to; and port 5058 for lemonfiber's `request.gate` contract, published on loopback alone |
-| Configuration | `/config`: the key lemonfiber asks the contract with (`lemonfiber.key`); the routes and tokens lemonfiber hands the gate, `upstreams.json` (where each upstream is, its key, for the media server the SHA-256 of each certificate its internal TLS port may present, and for Plex how Seerr is linked to it) and `tokens.json` (hashes of the tokens Seerr may present); `plex-tv/certificate.pem` and `plex-tv/key.pem`, the certificate lemonfiber makes for plex.tv's names, where Seerr reaches plex.tv through the gate; and `record.json` (the refusals and removals, written by the gate and answered over `request.gate`) |
+| Configuration | `/config`: the key lemonfiber asks the contract with (`lemonfiber.key`); the routes and tokens lemonfiber hands the gate, `upstreams.json` (where each curator's adapter and the media server is, the key the gate presents there, for the media server the SHA-256 of each certificate its internal TLS port may present, and for Plex how Seerr is linked to it) and `tokens.json` (hashes of the tokens Seerr may present); `plex-tv/certificate.pem` and `plex-tv/key.pem`, the certificate lemonfiber makes for plex.tv's names, where Seerr reaches plex.tv through the gate; and `record.json` (the refusals and removals, written by the gate and answered over `request.gate`) |
 | Settings | `LEMONFIBER_REQUEST_GATE_CONFIG` moves the configuration directory; nothing else is configurable |
 | Health check | `request-gate health`, which asks the running gate over loopback |
 | Version | `request-gate version`, which prints `request-gate` and its version to standard output |

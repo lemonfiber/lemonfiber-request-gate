@@ -12,11 +12,11 @@ fn asked(uri: &'static str, authorisation: Option<&'static str>) -> Asked {
 
 #[test]
 fn the_route_is_the_first_segment_and_the_rest_is_matched_in_lower_case() {
-    let asked = asked("/Sonarr/API/v3/QualityProfile?apikey=t", None);
+    let asked = asked("/Tv/API/v3/QualityProfile?apikey=t", None);
 
-    assert_eq!(asked.route, "Sonarr");
+    assert_eq!(asked.route, "Tv");
     assert_eq!(asked.segments(), ["api", "v3", "qualityprofile"]);
-    assert_eq!(asked.path, "/Sonarr/API/v3/QualityProfile");
+    assert_eq!(asked.path, "/Tv/API/v3/QualityProfile");
 }
 
 #[test]

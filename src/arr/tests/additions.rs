@@ -1,329 +1,265 @@
-//! A film or series request is built from its named fields, at what the \*arr
-//! holds, and added once.
-
 use axum::http::{Method, StatusCode};
 use serde_json::{json, Value};
 
-use super::{call, gate, only};
-use crate::fake::{json, status, Answer};
+use super::{asked, call, gate, held_film, held_series, holdings};
+use crate::fake::{curated, Answer, MOVIES_ROUTE, TV_ROUTE};
 
-/// What an \*arr holding quality profiles 1 and 2, the root folder `/data/<library>/`
-/// and tags 1 and 3 answers a gate's checks with, and `added` to the addition.
-fn holding(
-    library: &'static str,
-    folder: &'static str,
-    held: &Value,
-    added: Answer,
-) -> Vec<Answer> {
-    vec![
-        json(
-            Method::GET,
-            "/api/v3/qualityProfile",
-            &json!([{ "id": 1 }, { "id": 2 }]),
-        ),
-        json(
-            Method::GET,
-            "/api/v3/rootfolder",
-            &json!([{ "id": 1, "path": folder }, { "id": 2 }]),
-        ),
-        json(
-            Method::GET,
-            "/api/v3/tag",
-            &json!([{ "id": 1 }, { "id": 3 }]),
-        ),
-        json(Method::GET, library, held),
-        added,
-    ]
-}
-
-/// A film request as the request service sends it, with fields the gate drops.
-fn film_request() -> Value {
+/// What the request service sends to add a series it does not hold.
+fn series_added() -> Value {
     json!({
-        "title": "The Matrix",
-        "tmdbId": 603,
-        "year": 1999,
-        "titleSlug": "603",
-        "qualityProfileId": 1,
-        "profileId": 1,
-        "minimumAvailability": "released",
-        "rootFolderPath": "/data/movies",
-        "monitored": true,
-        "tags": [3],
-        "addOptions": { "searchForMovie": true, "monitor": "movieOnly" },
-        "path": "/etc",
-        "id": 5,
-        "movieFile": { "path": "/etc/passwd" }
-    })
-}
-
-#[tokio::test]
-async fn a_film_request_is_built_from_its_named_fields_at_what_radarr_holds() {
-    let (config, fake) = gate(
-        "film",
-        holding(
-            "/api/v3/movie",
-            "/data/movies/",
-            &json!([]),
-            json(Method::POST, "/api/v3/movie", &json!({ "id": 9 })),
-        ),
-    )
-    .await;
-
-    let answered = call(
-        &config,
-        Method::POST,
-        "radarr",
-        "/movie",
-        "",
-        Some(&film_request()),
-    )
-    .await;
-
-    assert_eq!(answered.status, StatusCode::OK);
-    assert_eq!(answered.json(), json!({ "id": 9 }));
-    assert_eq!(
-        only(&fake, "GET", "/api/v3/movie").query.as_deref(),
-        Some("tmdbId=603")
-    );
-    let sent = only(&fake, "POST", "/api/v3/movie");
-    assert_eq!(sent.query, None);
-    assert_eq!(
-        sent.body,
-        Some(json!({
-            "title": "The Matrix",
-            "tmdbId": 603,
-            "year": 1999,
-            "titleSlug": "603",
-            "qualityProfileId": 1,
-            "profileId": 1,
-            "minimumAvailability": "released",
-            "rootFolderPath": "/data/movies/",
-            "monitored": true,
-            "tags": [3],
-            "addOptions": { "searchForMovie": true }
-        }))
-    );
-}
-
-#[tokio::test]
-async fn a_film_request_off_what_radarr_holds_is_refused() {
-    let (config, fake) = gate(
-        "film-refused",
-        holding(
-            "/api/v3/movie",
-            "/data/movies",
-            &json!([]),
-            json(Method::POST, "/api/v3/movie", &json!({ "id": 9 })),
-        ),
-    )
-    .await;
-    let changed = |field: &str, value: Value| {
-        let mut sent = film_request();
-        if let Some(fields) = sent.as_object_mut() {
-            if value.is_null() {
-                fields.remove(field);
-            } else {
-                fields.insert(field.to_owned(), value);
-            }
-        }
-        sent
-    };
-    let refused = [
-        changed("qualityProfileId", json!(4)),
-        changed("qualityProfileId", Value::Null),
-        changed("profileId", json!(4)),
-        changed("rootFolderPath", json!("/data")),
-        changed("rootFolderPath", json!("/data/movies/other")),
-        changed("rootFolderPath", Value::Null),
-        changed("tags", json!([2])),
-        changed("tags", json!("3")),
-        changed("tmdbId", Value::Null),
-        changed("title", json!(7)),
-        changed("year", json!(-1)),
-        changed("addOptions", json!(true)),
-        changed("addOptions", json!({ "searchForMovie": "yes" })),
-        json!("a film"),
-    ];
-
-    for sent in &refused {
-        let answered = call(&config, Method::POST, "radarr", "/movie", "", Some(sent)).await;
-        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{sent}");
-    }
-    assert!(fake.sent("POST", "/api/v3/movie").is_empty());
-    assert_eq!(config.recorded().len(), refused.len());
-}
-
-#[tokio::test]
-async fn a_film_radarr_holds_already_is_not_added_again() {
-    let (config, fake) = gate(
-        "film-held",
-        holding(
-            "/api/v3/movie",
-            "/data/movies",
-            &json!([{ "id": 2, "tmdbId": 603 }]),
-            json(Method::POST, "/api/v3/movie", &json!({ "id": 9 })),
-        ),
-    )
-    .await;
-
-    let answered = call(
-        &config,
-        Method::POST,
-        "radarr",
-        "/movie",
-        "",
-        Some(&film_request()),
-    )
-    .await;
-
-    assert_eq!(answered.status, StatusCode::FORBIDDEN);
-    assert!(fake.sent("POST", "/api/v3/movie").is_empty());
-}
-
-#[tokio::test]
-async fn what_radarr_answers_a_check_with_decides_it() {
-    let lists = [
-        ("/api/v3/qualityProfile", json!({ "id": 1 })),
-        ("/api/v3/rootfolder", json!({ "path": "/data/movies" })),
-        ("/api/v3/movie", json!({})),
-    ];
-    for (path, unreadable) in lists {
-        let mut answers: Vec<Answer> = holding(
-            "/api/v3/movie",
-            "/data/movies",
-            &json!([]),
-            json(Method::POST, "/api/v3/movie", &json!({ "id": 9 })),
-        );
-        answers.insert(0, json(Method::GET, path, &unreadable));
-        let (config, fake) = gate("film-unreadable", answers).await;
-
-        let answered = call(
-            &config,
-            Method::POST,
-            "radarr",
-            "/movie",
-            "",
-            Some(&film_request()),
-        )
-        .await;
-
-        assert_eq!(answered.status, StatusCode::BAD_GATEWAY, "{path}");
-        assert!(fake.sent("POST", "/api/v3/movie").is_empty());
-        assert!(config.recorded().is_empty());
-    }
-
-    let (config, _) = gate(
-        "film-failing",
-        vec![status(
-            Method::GET,
-            "/api/v3/qualityProfile",
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )],
-    )
-    .await;
-    let answered = call(
-        &config,
-        Method::POST,
-        "radarr",
-        "/movie",
-        "",
-        Some(&film_request()),
-    )
-    .await;
-    assert_eq!(answered.status, StatusCode::INTERNAL_SERVER_ERROR);
-}
-
-#[tokio::test]
-async fn a_series_request_is_built_from_its_named_fields_at_what_sonarr_holds() {
-    let (config, fake) = gate(
-        "series",
-        holding(
-            "/api/v3/series",
-            "/data/tv",
-            &json!([]),
-            status(Method::POST, "/api/v3/series", StatusCode::CREATED),
-        ),
-    )
-    .await;
-    let sent = json!({
-        "tvdbId": 305_288,
-        "title": "The Expanse",
-        "qualityProfileId": 2,
+        "tvdbId": 81189,
+        "title": "Breaking Bad",
+        "qualityProfileId": 4,
         "languageProfileId": 1,
         "seasons": [
-            { "seasonNumber": 1, "monitored": true, "statistics": {} },
-            { "seasonNumber": 2, "monitored": false }
+            { "seasonNumber": 1, "monitored": true },
+            { "seasonNumber": 2, "monitored": false },
+            { "seasonNumber": 3, "monitored": true },
         ],
         "tags": [],
         "seasonFolder": true,
         "monitored": true,
         "monitorNewItems": "all",
-        "rootFolderPath": "/data/tv/",
-        "seriesType": "standard",
-        "addOptions": { "ignoreEpisodesWithFiles": true, "searchForMissingEpisodes": false },
-        "path": "/config"
-    });
+        "rootFolderPath": "/data/media/tv",
+        "seriesType": "anime",
+        "addOptions": { "ignoreEpisodesWithFiles": true, "searchForMissingEpisodes": true },
+    })
+}
 
-    let answered = call(&config, Method::POST, "sonarr", "/series", "", Some(&sent)).await;
+/// What the request service sends to add a film it does not hold.
+fn film_added() -> Value {
+    json!({
+        "title": "The Matrix",
+        "qualityProfileId": 4,
+        "profileId": 4,
+        "titleSlug": "603",
+        "minimumAvailability": "released",
+        "tmdbId": 603,
+        "year": 1999,
+        "rootFolderPath": "/data/media/tv/",
+        "monitored": true,
+        "tags": [],
+        "addOptions": { "searchForMovie": false },
+    })
+}
 
-    assert_eq!(answered.status, StatusCode::CREATED);
+/// A curator holding the profiles and folders, whose catalogue holds `catalogued`, and that
+/// answers a request with `requested`.
+fn curator(catalogued: &Value, requested: &Value) -> Vec<Answer> {
+    let mut answers = holdings();
+    answers.push(curated("catalogued", catalogued));
+    answers.push(curated("request", requested));
+    answers
+}
+
+#[tokio::test]
+async fn a_series_is_requested_with_the_seasons_monitored_anime_and_later_seasons_and_a_search() {
+    let unheld = json!({ "reference": 81189, "id": null, "title": "Breaking Bad", "year": 2008,
+        "monitored": false, "files": 0, "seasons": [] });
+    let (config, fake) = gate("series-added", curator(&unheld, &held_series())).await;
+
+    let answered = call(
+        &config,
+        Method::POST,
+        TV_ROUTE,
+        "/series",
+        "",
+        Some(&series_added()),
+    )
+    .await;
+
+    assert_eq!(answered.status, StatusCode::OK);
+    assert_eq!(answered.json().pointer("/id"), Some(&json!(12)));
     assert_eq!(
-        only(&fake, "GET", "/api/v3/series").query.as_deref(),
-        Some("tvdbId=305288")
+        asked(&fake, "request"),
+        [json!({
+            "kind": "tv",
+            "request": {
+                "reference": 81189,
+                "root_folder": "/data/media/tv/",
+                "quality_profile": 4,
+                "seasons": [1, 3],
+                "anime": true,
+                "later_seasons": true,
+                "search": true,
+            },
+        })]
     );
     assert_eq!(
-        only(&fake, "POST", "/api/v3/series").body,
-        Some(json!({
-            "tvdbId": 305_288,
-            "title": "The Expanse",
-            "qualityProfileId": 2,
-            "languageProfileId": 1,
-            "seasons": [
-                { "seasonNumber": 1, "monitored": true },
-                { "seasonNumber": 2, "monitored": false }
-            ],
-            "tags": [],
-            "seasonFolder": true,
-            "monitored": true,
-            "monitorNewItems": "all",
-            "rootFolderPath": "/data/tv",
-            "seriesType": "standard",
-            "addOptions": { "ignoreEpisodesWithFiles": true, "searchForMissingEpisodes": false }
-        }))
+        asked(&fake, "catalogued"),
+        [json!({ "kind": "tv", "reference": 81189 })]
     );
 }
 
 #[tokio::test]
-async fn a_series_request_with_seasons_in_another_shape_is_refused() {
-    let (config, fake) = gate(
-        "series-refused",
-        holding(
-            "/api/v3/series",
-            "/data/tv",
-            &json!([]),
-            status(Method::POST, "/api/v3/series", StatusCode::CREATED),
-        ),
+async fn a_film_is_requested_at_the_folder_as_the_curator_spells_it() {
+    let (config, fake) = gate("film-added", curator(&json!(null), &held_film())).await;
+
+    let answered = call(
+        &config,
+        Method::POST,
+        MOVIES_ROUTE,
+        "/movie",
+        "",
+        Some(&film_added()),
     )
     .await;
-    let base = json!({ "tvdbId": 1, "qualityProfileId": 1, "rootFolderPath": "/data/tv" });
-    let with_seasons = |seasons: Value| {
-        let mut sent = base.clone();
-        if let Some(fields) = sent.as_object_mut() {
-            fields.insert("seasons".to_owned(), seasons);
-        }
-        sent
-    };
 
-    for sent in [
-        with_seasons(json!(1)),
-        with_seasons(json!([1])),
-        with_seasons(json!([{ "seasonNumber": "1" }])),
-    ] {
-        let answered = call(&config, Method::POST, "sonarr", "/series", "", Some(&sent)).await;
-        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{sent}");
+    assert_eq!(answered.status, StatusCode::OK);
+    assert_eq!(answered.json().pointer("/tmdbId"), Some(&json!(603)));
+    assert_eq!(
+        asked(&fake, "request"),
+        [json!({
+            "kind": "movies",
+            "request": {
+                "reference": 603,
+                "root_folder": "/data/media/tv/",
+                "quality_profile": 4,
+                "seasons": [],
+                "anime": false,
+                "later_seasons": false,
+                "search": false,
+            },
+        })]
+    );
+}
+
+#[tokio::test]
+async fn a_series_numbered_as_usual_with_no_options_is_requested_so() {
+    let mut sent = series_added();
+    if let Some(sent) = sent.as_object_mut() {
+        sent.insert("seriesType".to_owned(), json!("standard"));
+        sent.insert("monitorNewItems".to_owned(), json!("none"));
+        sent.remove("addOptions");
+        sent.remove("seasons");
     }
-    assert!(fake.seen().is_empty());
+    let (config, fake) = gate("series-plain", curator(&json!(null), &held_series())).await;
 
-    let answered = call(&config, Method::POST, "sonarr", "/series", "", Some(&base)).await;
-    assert_eq!(answered.status, StatusCode::CREATED);
+    let answered = call(&config, Method::POST, TV_ROUTE, "/series", "", Some(&sent)).await;
+
+    assert_eq!(answered.status, StatusCode::OK);
+    let request = asked(&fake, "request");
+    let request = request.first().and_then(|one| one.get("request"));
+    for (field, value) in [
+        ("seasons", json!([])),
+        ("anime", json!(false)),
+        ("later_seasons", json!(false)),
+        ("search", json!(false)),
+    ] {
+        assert_eq!(
+            request.and_then(|one| one.get(field)),
+            Some(&value),
+            "{field}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_addition_the_curator_could_not_take_as_sent_is_refused_and_asks_no_request() {
+    let held = held_series();
+    let cases: Vec<(&str, Value, &str)> = vec![
+        (
+            "profile-unheld",
+            json!({ "qualityProfileId": 5 }),
+            "unheld profile",
+        ),
+        (
+            "folder-unheld",
+            json!({ "rootFolderPath": "/elsewhere" }),
+            "unheld folder",
+        ),
+        (
+            "no-profile",
+            json!({ "qualityProfileId": null }),
+            "no profile",
+        ),
+        ("no-folder", json!({ "rootFolderPath": null }), "no folder"),
+        ("no-reference", json!({ "tvdbId": null }), "no reference"),
+        (
+            "negative-reference",
+            json!({ "tvdbId": -1 }),
+            "a negative reference",
+        ),
+        (
+            "text-type",
+            json!({ "seriesType": 1 }),
+            "a series type not in text",
+        ),
+        (
+            "seasons-not-a-list",
+            json!({ "seasons": {} }),
+            "seasons not a list",
+        ),
+        (
+            "season-not-an-object",
+            json!({ "seasons": [1] }),
+            "a season not an object",
+        ),
+        (
+            "season-unnumbered",
+            json!({ "seasons": [{ "monitored": true }] }),
+            "a season without its number",
+        ),
+        (
+            "season-too-large",
+            json!({ "seasons": [{ "seasonNumber": 5_000_000_000_u64, "monitored": true }] }),
+            "a season past any number",
+        ),
+        (
+            "options-not-an-object",
+            json!({ "addOptions": true }),
+            "options not an object",
+        ),
+        (
+            "search-not-a-flag",
+            json!({ "addOptions": { "searchForMissingEpisodes": "yes" } }),
+            "a search not a flag",
+        ),
+    ];
+    for (name, changed, why) in cases {
+        let mut sent = series_added();
+        if let (Some(sent), Some(changed)) = (sent.as_object_mut(), changed.as_object()) {
+            for (field, value) in changed {
+                if value.is_null() {
+                    sent.remove(field);
+                } else {
+                    sent.insert(field.clone(), value.clone());
+                }
+            }
+        }
+        let (config, fake) = gate(name, curator(&json!(null), &held)).await;
+
+        let answered = call(&config, Method::POST, TV_ROUTE, "/series", "", Some(&sent)).await;
+
+        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{why}");
+        assert!(asked(&fake, "request").is_empty(), "{why}");
+    }
+}
+
+#[tokio::test]
+async fn an_addition_of_a_title_the_curator_holds_or_a_body_that_is_no_object_is_refused() {
+    let (config, fake) = gate("already-held", curator(&held_series(), &held_series())).await;
+
+    let held = call(
+        &config,
+        Method::POST,
+        TV_ROUTE,
+        "/series",
+        "",
+        Some(&series_added()),
+    )
+    .await;
+    let unshaped = call(
+        &config,
+        Method::POST,
+        TV_ROUTE,
+        "/series",
+        "",
+        Some(&json!([])),
+    )
+    .await;
+
+    assert_eq!(held.status, StatusCode::FORBIDDEN);
+    assert_eq!(unshaped.status, StatusCode::FORBIDDEN);
+    assert!(asked(&fake, "request").is_empty());
 }

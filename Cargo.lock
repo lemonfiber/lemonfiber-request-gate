@@ -685,7 +685,7 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 [[package]]
 name = "lemonfiber-adapter-kit"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=bf525eadbff0d58952f8e3b5013ef360a9d000ee#bf525eadbff0d58952f8e3b5013ef360a9d000ee"
 dependencies = [
  "async-trait",
  "axum",
@@ -705,7 +705,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-contract"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=bf525eadbff0d58952f8e3b5013ef360a9d000ee#bf525eadbff0d58952f8e3b5013ef360a9d000ee"
 dependencies = [
  "async-trait",
  "lemonfiber-ports",
@@ -719,7 +719,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-error"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=bf525eadbff0d58952f8e3b5013ef360a9d000ee#bf525eadbff0d58952f8e3b5013ef360a9d000ee"
 dependencies = [
  "schemars",
  "serde",
@@ -728,7 +728,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-manifest"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=bf525eadbff0d58952f8e3b5013ef360a9d000ee#bf525eadbff0d58952f8e3b5013ef360a9d000ee"
 dependencies = [
  "schemars",
  "serde",
@@ -740,7 +740,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-pinned"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=bf525eadbff0d58952f8e3b5013ef360a9d000ee#bf525eadbff0d58952f8e3b5013ef360a9d000ee"
 dependencies = [
  "axum",
  "futures-util",
@@ -757,7 +757,7 @@ dependencies = [
 [[package]]
 name = "lemonfiber-ports"
 version = "0.17.0"
-source = "git+https://github.com/lemonfiber/lemonfiber?rev=d70b179fbfdef3eb473be96417cb6a19dd251368#d70b179fbfdef3eb473be96417cb6a19dd251368"
+source = "git+https://github.com/lemonfiber/lemonfiber?rev=bf525eadbff0d58952f8e3b5013ef360a9d000ee#bf525eadbff0d58952f8e3b5013ef360a9d000ee"
 dependencies = [
  "async-trait",
  "base64",

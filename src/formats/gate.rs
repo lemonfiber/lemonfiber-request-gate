@@ -12,6 +12,7 @@
 //!
 //! The gate listens on [`PORT`] inside its own networks and publishes nothing.
 
+use lemonfiber_ports::media;
 use lemonfiber_ports::service::PlexLink;
 use serde::{Deserialize, Serialize};
 
@@ -53,14 +54,28 @@ impl File {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Kind {
-    /// A television \*arr.
-    Sonarr,
-    /// A film \*arr.
-    Radarr,
-    /// The media server.
+    /// The adapter of the curator filing series, asked over `library.curate`.
+    Tv,
+    /// The adapter of the curator filing films, asked over `library.curate`.
+    Movies,
+    /// The media server, answered in Jellyfin's API.
     Jellyfin,
+    /// Emby as the media server, answered in its own API.
+    Emby,
     /// Plex as the media server, answered in its own API on a port of its own.
     Plex,
+}
+
+impl Kind {
+    /// The kind of media the curator a route reaches files; none on the media server's.
+    #[must_use]
+    pub const fn media(self) -> Option<media::Kind> {
+        match self {
+            Self::Tv => Some(media::Kind::Tv),
+            Self::Movies => Some(media::Kind::Movies),
+            Self::Jellyfin | Self::Emby | Self::Plex => None,
+        }
+    }
 }
 
 /// The credential the gate presents upstream.
@@ -94,7 +109,8 @@ impl Credential {
 /// One route: the path segment it answers under, what it reaches, where, and with what.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Upstream {
-    /// The upstream's service id, which is the route's path segment: `/{route}`.
+    /// The route's path segment, `/{route}`: the media type a curator files, or the media
+    /// server's service id.
     pub route: String,
     /// What it reaches.
     pub kind: Kind,
@@ -102,13 +118,12 @@ pub struct Upstream {
     pub address: String,
     /// What the gate presents to it.
     pub credential: Credential,
-    /// The upstream's majors the stack supports, read off its own version: the gate
-    /// forwards to no other. Empty on the \*arr routes, whose one supported API the
-    /// gate knows itself.
+    /// The media server's majors the stack supports, read off its own version: the gate
+    /// forwards to no other. Empty on a curator's route, which speaks `library.curate`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub majors: Vec<u32>,
     /// On the media server's route, the SHA-256 of each certificate its internal TLS
-    /// port may present, the only ones the gate accepts there. None on the \*arr routes.
+    /// port may present, the only ones the gate accepts there. None on a curator's route.
     #[serde(default, skip_serializing_if = "Pins::is_empty")]
     pub pins: Pins,
     /// On the Plex route, how the request service is linked to Plex: what the route admits
