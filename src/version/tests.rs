@@ -255,3 +255,18 @@ async fn a_curators_route_is_supported_without_being_asked() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_media_server_refusing_its_version_hands_back_why() {
+    let fake = upstream(vec![
+        crate::fake::status(Method::GET, "/System/Info/Public", StatusCode::UNAUTHORIZED),
+        json(Method::GET, "/Users", &json!([])),
+    ])
+    .await;
+    let config = Config::new("jellyfin-refusing").with_upstream(&fake);
+
+    let answered = users(&config.service()).await;
+
+    assert_eq!(answered.status, StatusCode::UNAUTHORIZED);
+    assert!(fake.sent("GET", "/Users").is_empty());
+}

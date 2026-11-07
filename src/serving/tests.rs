@@ -434,3 +434,24 @@ async fn the_plex_route_is_answered_on_its_own_port_alone() {
     assert!(fake.all().is_empty());
     assert_eq!(config.recorded(), ["GET /plex/library/sections"]);
 }
+
+#[tokio::test]
+async fn a_status_an_upstream_answered_the_gates_own_read_with_is_handed_back() {
+    let config = Config::new("upstream-status");
+    let asked = crate::asked::Asked::new(
+        Method::GET,
+        &axum::http::Uri::from_static("/jellyfin/Users"),
+        &axum::http::HeaderMap::new(),
+        None,
+    );
+
+    let answered = super::stopped(
+        &config.service(),
+        &asked,
+        crate::upstream::Stop::Upstream(StatusCode::NOT_FOUND),
+    )
+    .await;
+
+    assert_eq!(answered.status(), StatusCode::NOT_FOUND);
+    assert!(config.recorded().is_empty());
+}

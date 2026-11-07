@@ -201,6 +201,11 @@ async fn an_addition_the_curator_could_not_take_as_sent_is_refused_and_asks_no_r
             "a season without its number",
         ),
         (
+            "season-number-in-text",
+            json!({ "seasons": [{ "seasonNumber": "1", "monitored": true }] }),
+            "a season numbered in text",
+        ),
+        (
             "season-too-large",
             json!({ "seasons": [{ "seasonNumber": 5_000_000_000_u64, "monitored": true }] }),
             "a season past any number",
