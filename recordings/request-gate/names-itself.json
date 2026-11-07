@@ -1,5 +1,5 @@
 {
-  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:611e4724dddf4e0bd9ac6cfd53ea220b1850cfd203a97075d84273cb0545a8e7",
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:70b128574814b4d6df92182f4542c1a192094f98fa83a0a30941bd49b70d17d4",
   "note": "The pinned program, run as the operator's user with no network, says it is the request gate and which version, and exits cleanly. The gate publishes no port and answers only the request service, so its own program is how it is proved live.",
   "run": {
     "args": ["version"]

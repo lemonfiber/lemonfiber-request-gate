@@ -14,8 +14,8 @@ forms       = ["library", "full"]
 id            = "request-gate"
 name          = "Request gate"
 image         = "ghcr.io/lemonfiber/request-gate"
-digest        = "sha256:611e4724dddf4e0bd9ac6cfd53ea220b1850cfd203a97075d84273cb0545a8e7"
-tag           = "main-a2b4c3179831"
+digest        = "sha256:70b128574814b4d6df92182f4542c1a192094f98fa83a0a30941bd49b70d17d4"
+tag           = "main-08b9bd470700"
 listens       = 5057
 health        = { kind = "container" }
 criticality   = "important"
