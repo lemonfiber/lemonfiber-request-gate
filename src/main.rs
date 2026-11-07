@@ -1,4 +1,4 @@
-//! The request gate: the request service's one path to the *arrs and the media server.
+//! The request gate: the request service's one path to the curators and the media server.
 //!
 //! It runs in the stack beside the request service, publishes no port, and is
 //! reachable only from that service. It holds the upstreams' credentials, answers a
@@ -7,6 +7,7 @@
 
 mod arr;
 mod asked;
+mod curator;
 #[cfg(test)]
 mod fake;
 mod files;

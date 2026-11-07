@@ -1,122 +1,150 @@
-//! A removal and a command each carry only what the gate names for them.
-
-use crate::formats::gate::{File, Outcome, Record};
 use axum::http::{Method, StatusCode};
 use serde_json::json;
 
-use super::{call, gate, only};
-use crate::fake::{json, status};
+use super::{asked, call, gate};
+use crate::fake::{curated, MOVIES_ROUTE, TV_ROUTE};
+
+/// A removal's parameters as the request service sends them.
+const REMOVED: &str = "deleteFiles=true&addImportExclusion=false";
 
 #[tokio::test]
-async fn a_removal_carries_the_id_and_its_two_flags_and_nothing_else() {
-    let (config, fake) = gate(
-        "removals",
-        vec![
-            status(Method::DELETE, "/api/v3/movie/7", StatusCode::OK),
-            status(Method::DELETE, "/api/v3/series/5", StatusCode::OK),
-        ],
-    )
-    .await;
+async fn a_removal_with_its_files_and_no_exclusion_asks_the_curator_to_remove() {
+    let (config, fake) = gate("removed", vec![curated("remove", &json!(null))]).await;
 
-    let film = call(
+    let answered = call(
         &config,
         Method::DELETE,
-        "radarr",
-        "/movie/007",
-        "deleteFiles=true&addImportExclusion=false&moveFiles=true",
-        Some(&json!({ "anything": 1 })),
+        TV_ROUTE,
+        "/series/12",
+        REMOVED,
+        None,
     )
     .await;
-    let series = call(&config, Method::DELETE, "sonarr", "/series/5", "", None).await;
 
     assert_eq!(
-        (film.status, series.status),
-        (StatusCode::OK, StatusCode::OK)
+        (answered.status, answered.json()),
+        (StatusCode::OK, json!({}))
     );
-    let sent = only(&fake, "DELETE", "/api/v3/movie/7");
+    assert_eq!(asked(&fake, "remove"), [json!({ "kind": "tv", "id": 12 })]);
+    assert_eq!(config.recorded(), ["DELETE /tv/api/v3/series/12"]);
+}
+
+#[tokio::test]
+async fn a_removal_keeping_files_excluding_imports_or_naming_neither_is_refused() {
+    let (config, fake) = gate("removal-refused", vec![curated("remove", &json!(null))]).await;
+
+    for query in [
+        "",
+        "deleteFiles=true",
+        "addImportExclusion=false",
+        "deleteFiles=false&addImportExclusion=false",
+        "deleteFiles=true&addImportExclusion=true",
+        "deleteFiles=yes&addImportExclusion=false",
+        "deleteFiles=true&deleteFiles=true&addImportExclusion=false",
+    ] {
+        let answered = call(
+            &config,
+            Method::DELETE,
+            MOVIES_ROUTE,
+            "/movie/7",
+            query,
+            None,
+        )
+        .await;
+        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{query}");
+    }
+    assert!(asked(&fake, "remove").is_empty());
+    assert!(config
+        .recorded()
+        .iter()
+        .all(|entry| entry == "DELETE /movies/api/v3/movie/7"));
+}
+
+#[tokio::test]
+async fn a_refresh_of_download_tracking_is_accepted_and_asks_nobody() {
+    let (config, fake) = gate("refresh", Vec::new()).await;
+
+    let answered = call(
+        &config,
+        Method::POST,
+        MOVIES_ROUTE,
+        "/command",
+        "",
+        Some(&json!({ "name": "RefreshMonitoredDownloads", "other": 1 })),
+    )
+    .await;
+
+    assert_eq!(answered.status, StatusCode::CREATED);
     assert_eq!(
-        sent.query.as_deref(),
-        Some("deleteFiles=true&addImportExclusion=false")
+        answered.json(),
+        json!({ "name": "RefreshMonitoredDownloads" })
     );
-    assert_eq!(sent.body, None);
-    assert_eq!(only(&fake, "DELETE", "/api/v3/series/5").query, None);
-    let outcomes: Vec<_> = Record::read(&config.read(File::Record))
-        .unwrap_or_default()
-        .entries
-        .into_iter()
-        .map(|entry| (entry.path, entry.outcome))
-        .collect();
+    assert!(fake.all().is_empty());
+}
+
+#[tokio::test]
+async fn a_search_asks_the_curator_to_search_each_title_named() {
+    let (config, fake) = gate("searched", vec![curated("search", &json!(null))]).await;
+
+    let series = call(
+        &config,
+        Method::POST,
+        TV_ROUTE,
+        "/command",
+        "",
+        Some(&json!({ "name": "MissingEpisodeSearch", "seriesId": 12 })),
+    )
+    .await;
+    let films = call(
+        &config,
+        Method::POST,
+        MOVIES_ROUTE,
+        "/command",
+        "",
+        Some(&json!({ "name": "MoviesSearch", "movieIds": [7, 8] })),
+    )
+    .await;
+
     assert_eq!(
-        outcomes,
+        (series.status, films.status),
+        (StatusCode::CREATED, StatusCode::CREATED)
+    );
+    assert_eq!(films.json(), json!({ "name": "MoviesSearch" }));
+    assert_eq!(
+        asked(&fake, "search"),
         [
-            ("/radarr/api/v3/movie/007".to_owned(), Outcome::Removed),
-            ("/sonarr/api/v3/series/5".to_owned(), Outcome::Removed)
+            json!({ "kind": "tv", "id": 12 }),
+            json!({ "kind": "movies", "id": 7 }),
+            json!({ "kind": "movies", "id": 8 }),
         ]
     );
 }
 
 #[tokio::test]
-async fn a_command_is_a_search_for_what_was_asked_for_or_a_refresh_and_nothing_else() {
-    let (config, fake) = gate(
-        "commands",
-        vec![json(Method::POST, "/api/v3/command", &json!({ "id": 1 }))],
-    )
-    .await;
-    let allowed = [
+async fn any_other_command_or_one_on_the_other_route_is_refused() {
+    let (config, fake) = gate("commands-refused", vec![curated("search", &json!(null))]).await;
+
+    for (route, sent) in [
+        (TV_ROUTE, json!({ "name": "MoviesSearch", "movieIds": [7] })),
         (
-            "radarr",
-            json!({ "name": "MoviesSearch", "movieIds": [7], "sendUpdatesToClient": true }),
-            json!({ "name": "MoviesSearch", "movieIds": [7] }),
+            MOVIES_ROUTE,
+            json!({ "name": "MissingEpisodeSearch", "seriesId": 12 }),
+        ),
+        (TV_ROUTE, json!({ "name": "RescanSeries", "seriesId": 12 })),
+        (TV_ROUTE, json!({ "name": "MissingEpisodeSearch" })),
+        (
+            TV_ROUTE,
+            json!({ "name": "MissingEpisodeSearch", "seriesId": -1 }),
         ),
         (
-            "sonarr",
-            json!({ "name": "MissingEpisodeSearch", "seriesId": 5, "path": "/" }),
-            json!({ "name": "MissingEpisodeSearch", "seriesId": 5 }),
+            MOVIES_ROUTE,
+            json!({ "name": "MoviesSearch", "movieIds": 7 }),
         ),
-        (
-            "sonarr",
-            json!({ "name": "RefreshMonitoredDownloads" }),
-            json!({ "name": "RefreshMonitoredDownloads" }),
-        ),
-        (
-            "radarr",
-            json!({ "name": "RefreshMonitoredDownloads", "movieIds": [1] }),
-            json!({ "name": "RefreshMonitoredDownloads" }),
-        ),
-    ];
-    for (route, sent, built) in allowed {
+        (TV_ROUTE, json!({ "name": 1 })),
+        (TV_ROUTE, json!([])),
+    ] {
         let answered = call(&config, Method::POST, route, "/command", "", Some(&sent)).await;
-        assert_eq!(answered.status, StatusCode::OK, "{sent}");
-        assert_eq!(fake.seen().pop().and_then(|seen| seen.body), Some(built));
+        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{route} {sent}");
     }
-
-    let refused = [
-        ("sonarr", json!({ "name": "MoviesSearch", "movieIds": [7] })),
-        (
-            "radarr",
-            json!({ "name": "MissingEpisodeSearch", "seriesId": 5 }),
-        ),
-        ("radarr", json!({ "name": "MoviesSearch" })),
-        (
-            "radarr",
-            json!({ "name": "MoviesSearch", "movieIds": ["7"] }),
-        ),
-        (
-            "sonarr",
-            json!({ "name": "MissingEpisodeSearch", "seriesId": -5 }),
-        ),
-        ("sonarr", json!({ "name": "DeleteSeries", "seriesId": 5 })),
-        ("sonarr", json!({ "name": "ResetApiKey" })),
-        ("sonarr", json!({ "seriesId": 5 })),
-        ("sonarr", json!([{ "name": "RefreshMonitoredDownloads" }])),
-    ];
-    for (route, sent) in &refused {
-        let answered = call(&config, Method::POST, route, "/command", "", Some(sent)).await;
-        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{sent}");
-    }
-    let unread = call(&config, Method::POST, "sonarr", "/command", "", None).await;
-
-    assert_eq!(unread.status, StatusCode::FORBIDDEN);
-    assert_eq!(fake.seen().len(), 4);
-    assert_eq!(config.recorded().len(), refused.len() + 1);
+    assert!(fake.all().is_empty());
 }

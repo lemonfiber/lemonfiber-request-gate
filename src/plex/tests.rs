@@ -492,3 +492,20 @@ async fn a_plex_on_a_major_the_route_does_not_name_is_answered_unavailable_namin
         StatusCode::BAD_GATEWAY
     );
 }
+
+#[tokio::test]
+async fn plex_gone_once_its_route_is_admitted_is_a_bad_gateway() {
+    let mut gone = plex().await;
+    gone.tls = "https://127.0.0.1:1".to_owned();
+    let config = managed(&gone, "plex-gone");
+
+    let answered = asked(
+        &config,
+        Method::GET,
+        "/library/sections",
+        &[("X-Plex-Token", PLEX_TOKEN)],
+    )
+    .await;
+
+    assert_eq!(answered, StatusCode::BAD_GATEWAY);
+}

@@ -7,15 +7,15 @@ use axum::http::{Method, StatusCode};
 use serde_json::json;
 use tokio::net::TcpListener;
 
-use crate::fake::{ask, json, status, upstream, Answered, Config, JELLYFIN_TOKEN, TOKEN};
+use crate::fake::{ask, curated, json, upstream, Answered, Config, JELLYFIN_TOKEN, TV_TOKEN};
 use crate::serving::Service;
 
-/// Ask `service` for the tags on the Sonarr route.
-async fn tags(service: &Arc<Service>) -> Answered {
+/// Ask `service` for the quality profiles on the series route.
+async fn profiles(service: &Arc<Service>) -> Answered {
     ask(
         Arc::clone(service),
         Method::GET,
-        &format!("/sonarr/api/v3/tag?apikey={TOKEN}"),
+        &format!("/tv/api/v3/qualityprofile?apikey={TV_TOKEN}"),
         &[],
         Body::empty(),
     )
@@ -24,11 +24,16 @@ async fn tags(service: &Arc<Service>) -> Answered {
 
 /// Ask `service` for the media server's users.
 async fn users(service: &Arc<Service>) -> Answered {
+    users_on(service, "jellyfin").await
+}
+
+/// Ask `service` for the media server's users on `route`.
+async fn users_on(service: &Arc<Service>, route: &str) -> Answered {
     let authorisation = format!("MediaBrowser Client=\"Seerr\", Token=\"{JELLYFIN_TOKEN}\"");
     ask(
         Arc::clone(service),
         Method::GET,
-        "/jellyfin/Users",
+        &format!("/{route}/Users"),
         &[("authorization", authorisation.as_str())],
         Body::empty(),
     )
@@ -54,49 +59,50 @@ fn rewrite(
 }
 
 #[tokio::test]
-async fn an_arr_is_asked_once_and_again_only_when_its_route_changes() {
-    let fake = upstream(vec![json(Method::GET, "/api/v3/tag", &json!([]))]).await;
-    let config = Config::new("arr-asked").with_upstream(&fake);
+async fn a_curators_route_is_asked_no_version() {
+    let fake = upstream(vec![curated("quality_profiles", &json!([]))]).await;
+    let config = Config::new("curator-unversioned").with_upstream(&fake);
     let service = config.service();
 
-    let first = tags(&service).await;
-    let second = tags(&service).await;
-    rewrite(&config, "sonarr", |one| {
+    let first = profiles(&service).await;
+    rewrite(&config, "tv", |one| {
         one.credential = Credential::new("a-new-key");
     });
-    let third = tags(&service).await;
+    let second = profiles(&service).await;
 
-    for answered in [first, second, third] {
+    for answered in [first, second] {
         assert_eq!(answered.status, StatusCode::OK);
     }
-    assert_eq!(fake.sent("GET", "/api/v3/system/status").len(), 2);
-    assert_eq!(fake.sent("GET", "/api/v3/tag").len(), 3);
+    assert_eq!(
+        fake.all()
+            .iter()
+            .map(|one| one.path.as_str())
+            .collect::<Vec<_>>(),
+        [crate::fake::curate("quality_profiles"); 2]
+    );
 }
 
 #[tokio::test]
-async fn an_arr_that_cannot_say_its_status_hands_back_why_and_is_asked_again() {
+async fn emby_on_another_major_is_answered_503_naming_emby() {
     let fake = upstream(vec![
-        status(
+        json(
             Method::GET,
-            "/api/v3/system/status",
-            StatusCode::UNAUTHORIZED,
+            "/System/Info/Public",
+            &json!({ "Version": "4.8.10.0" }),
         ),
-        json(Method::GET, "/api/v3/tag", &json!([])),
+        json(Method::GET, "/Users", &json!([])),
     ])
     .await;
-    let config = Config::new("arr-unanswered").with_upstream(&fake);
-    let service = config.service();
+    let config = Config::new("emby-unsupported").with_emby(&fake);
 
-    let first = tags(&service).await;
-    let second = tags(&service).await;
+    let answered = users_on(&config.service(), "emby").await;
 
+    assert_eq!(answered.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
-        (first.status, second.status),
-        (StatusCode::UNAUTHORIZED, StatusCode::UNAUTHORIZED)
+        answered.body,
+        "Emby 4.8.10.0 is not a version this gate supports"
     );
-    assert_eq!(fake.sent("GET", "/api/v3/system/status").len(), 2);
-    assert!(fake.sent("GET", "/api/v3/tag").is_empty());
-    assert!(config.recorded().is_empty());
+    assert!(fake.sent("GET", "/Users").is_empty());
 }
 
 #[tokio::test]
@@ -219,5 +225,48 @@ async fn a_media_server_that_does_not_say_its_version_is_a_bad_gateway() {
 
     assert_eq!(silent.status, StatusCode::BAD_GATEWAY);
     assert_eq!(unreachable.status, StatusCode::BAD_GATEWAY);
+    assert!(fake.sent("GET", "/Users").is_empty());
+}
+
+#[tokio::test]
+async fn a_curators_route_is_supported_without_being_asked() {
+    let client = crate::serving::client().unwrap_or_default();
+    for kind in [
+        crate::formats::gate::Kind::Tv,
+        crate::formats::gate::Kind::Movies,
+    ] {
+        let upstream = crate::formats::gate::Upstream {
+            route: "curator".to_owned(),
+            kind,
+            address: "http://127.0.0.1:1".to_owned(),
+            credential: Credential::new("key"),
+            majors: Vec::new(),
+            pins: crate::formats::Pins::default(),
+            link: None,
+        };
+        let reach = crate::upstream::Reach {
+            client: &client,
+            upstream: &upstream,
+        };
+
+        assert!(
+            super::Versions::default().supported(&reach).await.is_ok(),
+            "{kind:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_media_server_refusing_its_version_hands_back_why() {
+    let fake = upstream(vec![
+        crate::fake::status(Method::GET, "/System/Info/Public", StatusCode::UNAUTHORIZED),
+        json(Method::GET, "/Users", &json!([])),
+    ])
+    .await;
+    let config = Config::new("jellyfin-refusing").with_upstream(&fake);
+
+    let answered = users(&config.service()).await;
+
+    assert_eq!(answered.status, StatusCode::UNAUTHORIZED);
     assert!(fake.sent("GET", "/Users").is_empty());
 }

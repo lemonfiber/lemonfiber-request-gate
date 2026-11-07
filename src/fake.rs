@@ -23,14 +23,26 @@ use crate::serving::{routes, Service};
 use crate::settings::Settings;
 use lemonfiber_ports::service::PlexLink;
 
-/// The token the Sonarr route accepts.
-pub(crate) const TOKEN: &str = "the-sonarr-token";
+/// The token the series route accepts.
+pub(crate) const TV_TOKEN: &str = "the-tv-token";
 
-/// The token the Radarr route accepts.
-pub(crate) const RADARR_TOKEN: &str = "the-radarr-token";
+/// The token the film route accepts.
+pub(crate) const MOVIES_TOKEN: &str = "the-movies-token";
 
-/// The token the Jellyfin route accepts.
+/// The token the media server's route accepts, Jellyfin's or Emby's.
 pub(crate) const JELLYFIN_TOKEN: &str = "the-jellyfin-token";
+
+/// The series route's name.
+pub(crate) const TV_ROUTE: &str = "tv";
+
+/// The film route's name.
+pub(crate) const MOVIES_ROUTE: &str = "movies";
+
+/// The Jellyfin route's name.
+pub(crate) const JELLYFIN_ROUTE: &str = "jellyfin";
+
+/// The Emby route's name.
+pub(crate) const EMBY_ROUTE: &str = "emby";
 
 /// The Plex route's name.
 pub(crate) const PLEX_ROUTE: &str = "plex";
@@ -75,9 +87,8 @@ impl Config {
         std::fs::read_to_string(self.0.join(file.name())).unwrap_or_default()
     }
 
-    /// This directory with a Sonarr, a Radarr and a Jellyfin route, all reaching
-    /// `address`, the Jellyfin one pinning a certificate nothing presents, and each
-    /// route's token.
+    /// This directory with a series, a film and a Jellyfin route, all reaching `address`,
+    /// the Jellyfin one pinning a certificate nothing presents, and each route's token.
     pub(crate) fn with_routes(self, address: &str) -> Self {
         self.routed(
             address,
@@ -86,38 +97,56 @@ impl Config {
         )
     }
 
-    /// This directory with a Sonarr and a Radarr route reaching `fake` and a Jellyfin one
+    /// This directory with a series and a film route reaching `fake` and a Jellyfin one
     /// reaching it over TLS, pinning the certificate it presents, and each route's token.
     pub(crate) fn with_upstream(self, fake: &Fake) -> Self {
         self.routed(&fake.address, &fake.tls, &fake.pin)
     }
 
     fn routed(self, address: &str, encrypted: &str, pin: &str) -> Self {
-        let route = |route: &str, kind| Upstream {
-            route: route.to_owned(),
-            kind,
-            address: if kind == Kind::Jellyfin {
-                encrypted.to_owned()
-            } else {
-                address.to_owned()
-            },
-            credential: Credential::new(KEY),
-            majors: if kind == Kind::Jellyfin {
-                vec![MAJOR]
-            } else {
-                Vec::new()
-            },
-            pins: if kind == Kind::Jellyfin {
-                Pins::of(&[pin.to_owned()]).unwrap_or_default()
-            } else {
-                Pins::default()
-            },
-            link: None,
+        self.served(address, encrypted, pin, (JELLYFIN_ROUTE, Kind::Jellyfin))
+    }
+
+    /// This directory with a series and a film route reaching `fake` and an Emby one
+    /// reaching it over TLS, pinning the certificate it presents, and each route's token.
+    pub(crate) fn with_emby(self, fake: &Fake) -> Self {
+        self.served(
+            &fake.address,
+            &fake.tls,
+            &fake.pin,
+            (EMBY_ROUTE, Kind::Emby),
+        )
+    }
+
+    fn served(self, address: &str, encrypted: &str, pin: &str, server: (&str, Kind)) -> Self {
+        let route = |route: &str, kind: Kind| {
+            let media_server = kind.media().is_none();
+            Upstream {
+                route: route.to_owned(),
+                kind,
+                address: if media_server {
+                    encrypted.to_owned()
+                } else {
+                    address.to_owned()
+                },
+                credential: Credential::new(KEY),
+                majors: if media_server {
+                    vec![MAJOR]
+                } else {
+                    Vec::new()
+                },
+                pins: if media_server {
+                    Pins::of(&[pin.to_owned()]).unwrap_or_default()
+                } else {
+                    Pins::default()
+                },
+                link: None,
+            }
         };
         let upstreams = Upstreams::of(vec![
-            route("sonarr", Kind::Sonarr),
-            route("radarr", Kind::Radarr),
-            route("jellyfin", Kind::Jellyfin),
+            route(TV_ROUTE, Kind::Tv),
+            route(MOVIES_ROUTE, Kind::Movies),
+            route(server.0, server.1),
         ]);
         self.write(File::Upstreams, &upstreams.written());
         let accepted = |route: &str, token| Accepted {
@@ -125,9 +154,9 @@ impl Config {
             tokens: vec![TokenHash::of(token)],
         };
         let tokens = Tokens::of(vec![
-            accepted("sonarr", TOKEN),
-            accepted("radarr", RADARR_TOKEN),
-            accepted("jellyfin", JELLYFIN_TOKEN),
+            accepted(TV_ROUTE, TV_TOKEN),
+            accepted(MOVIES_ROUTE, MOVIES_TOKEN),
+            accepted(server.0, JELLYFIN_TOKEN),
         ]);
         self.write(File::Tokens, &tokens.written());
         self
@@ -237,6 +266,33 @@ pub(crate) fn json(method: Method, path: &'static str, body: &Value) -> Answer {
     }
 }
 
+/// `operation` of `library.curate` answered with `answer`.
+pub(crate) fn curated(operation: &str, answer: &Value) -> Answer {
+    json(Method::POST, curate(operation), answer)
+}
+
+/// `operation` of `library.curate` refused as `kind`, as an adapter refuses it.
+pub(crate) fn curate_refused(operation: &str, kind: lemonfiber_contract::wire::Kind) -> Answer {
+    let refusal = lemonfiber_contract::Refusal::new(kind, "refused");
+    Answer {
+        method: Method::POST,
+        path: curate(operation),
+        status: StatusCode::from_u16(kind.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        headers: vec![(
+            "content-type",
+            lemonfiber_contract::wire::PROBLEM.to_owned(),
+        )],
+        body: Bytes::from(serde_json::to_string(&refusal).unwrap_or_default()),
+    }
+}
+
+/// The path `operation` of `library.curate` is asked at.
+pub(crate) fn curate(operation: &str) -> &'static str {
+    use lemonfiber_contract::capabilities::library::curate;
+    let path = lemonfiber_contract::path(curate::CAPABILITY, curate::MAJOR, operation);
+    Box::leak(path.into_boxed_str())
+}
+
 /// `method` on `path` answered with `status` and no body.
 pub(crate) fn status(method: Method, path: &'static str, status: StatusCode) -> Answer {
     Answer {
@@ -278,8 +334,8 @@ pub(crate) fn raw(
     }
 }
 
-/// The paths the gate asks an upstream's version on.
-const PROBES: [&str; 2] = ["/api/v3/system/status", "/System/Info/Public"];
+/// The path the gate asks the media server's version on.
+const PROBE: &str = "/System/Info/Public";
 
 /// An upstream standing, over plain HTTP at `address` and over TLS at `tls` presenting
 /// the certificate `pin` is the SHA-256 of, and what it was sent.
@@ -304,7 +360,7 @@ impl Fake {
     pub(crate) fn seen(&self) -> Vec<Seen> {
         self.all()
             .into_iter()
-            .filter(|seen| !(seen.method == "GET" && PROBES.contains(&seen.path.as_str())))
+            .filter(|seen| !(seen.method == "GET" && seen.path == PROBE))
             .collect()
     }
 
@@ -318,13 +374,8 @@ impl Fake {
 }
 
 /// An upstream answering `answers`; then, where they do not say, its version as a
-/// supported \*arr and media server; and `404` to anything else.
+/// supported media server; and `404` to anything else.
 pub(crate) async fn upstream(mut answers: Vec<Answer>) -> Fake {
-    answers.push(json(
-        Method::GET,
-        "/api/v3/system/status",
-        &serde_json::json!({ "version": "4.0.0" }),
-    ));
     answers.push(json(
         Method::GET,
         "/System/Info/Public",

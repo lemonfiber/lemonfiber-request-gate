@@ -9,12 +9,12 @@
 
 ## What this repo is
 
-The request gate: the request service's one path to Sonarr, Radarr and the media server, Jellyfin or Plex (ADR-0032, ADR-0057). One Rust binary crate and one distroless image that publishes no port. See the spec:
+The request gate: the request service's one path to the curators that file series and films and to the media server, Jellyfin, Emby or Plex (ADR-0032, ADR-0057, ADR-0060). One Rust binary crate and one distroless image that publishes no port. See the spec:
 [`30-repos/lemonfiber-request-gate.md`](https://github.com/lemonfiber/spec/blob/main/30-repos/lemonfiber-request-gate.md).
 
 ## The one rule you cannot break here
 
-**Nothing is forwarded as it came.** Every call on the list is built by the gate itself from the parameters and body fields ADR-0032 names, and every other call is refused with 403 and recorded. A route that passes a request, a header or a token through is a defect however it is reached. The routes, their credentials and their tokens arrive over `request.gate`, under the plugin's key, on a port of its own that the request service never reaches. The media server is reached only over TLS, and only where the certificate it presents is one its route pins; a route that pins none reaches nothing. The one thing passed on as it came is a member's own Plex sign-in, `/users/account.json` with their own token, which the plex.tv front hands to plex.tv unchanged (C6-R28); plex.tv's account read is the gate's only egress (C6-R22).
+**Nothing is forwarded as it came.** Every call on the list is built by the gate itself from the parameters and body fields ADR-0032 names, and every other call is refused with 403 and recorded. A route that passes a request, a header or a token through is a defect however it is reached. A curator's route is asked over `library.curate`, of the curator's adapter, under the request key the core minted for the gate there; the gate never holds a curator's own key. The routes, their credentials and their tokens arrive over `request.gate`, under the plugin's key, on a port of its own that the request service never reaches. The media server is reached only over TLS, and only where the certificate it presents is one its route pins; a route that pins none reaches nothing. The one thing passed on as it came is a member's own Plex sign-in, `/users/account.json` with their own token, which the plex.tv front hands to plex.tv unchanged (C6-R28); plex.tv's account read is the gate's only egress (C6-R22).
 
 ## Code standards (enforced)
 

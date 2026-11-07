@@ -225,7 +225,7 @@ const ENCRYPTED: &str = "https://";
 /// is reached only over TLS, accepting only a certificate it pins.
 fn upstream(route: &Gated) -> Result<Upstream, Failure> {
     let (pins, link) = match &route.target {
-        Target::MediaServer { pins } => (encrypted(route, pins)?, None),
+        Target::MediaServer { pins } | Target::Emby { pins } => (encrypted(route, pins)?, None),
         Target::Plex { pins, link } => (encrypted(route, pins)?, Some(link.clone())),
         Target::Curator { .. } => (Pins::default(), None),
     };
@@ -265,18 +265,19 @@ fn accepted(route: &Gated) -> Result<Accepted, Failure> {
     })
 }
 
-/// What the gate calls `target`: a curator of video by the kind it fetches, and the media
-/// server.
+/// What the gate calls `target`: a curator by the media type it files, and the media
+/// server by the API it is answered in.
 fn kind(target: &Target) -> Result<Kind, Failure> {
     match target {
         Target::Curator { media_type } => match media::Kind::for_media_type(media_type) {
-            Some(media::Kind::Tv) => Ok(Kind::Sonarr),
-            Some(media::Kind::Movies) => Ok(Kind::Radarr),
+            Some(media::Kind::Tv) => Ok(Kind::Tv),
+            Some(media::Kind::Movies) => Ok(Kind::Movies),
             None => Err(refused(&format!(
                 "it reaches no curator filing {media_type}"
             ))),
         },
         Target::MediaServer { .. } => Ok(Kind::Jellyfin),
+        Target::Emby { .. } => Ok(Kind::Emby),
         Target::Plex { .. } => Ok(Kind::Plex),
     }
 }
@@ -289,13 +290,16 @@ fn target(upstream: &Upstream) -> Target {
             pins: pins.listed().to_vec(),
             link: upstream.link.clone().unwrap_or(PlexLink::Managed),
         },
-        Kind::Sonarr => Target::Curator {
+        Kind::Tv => Target::Curator {
             media_type: media::Kind::Tv.media_type().to_owned(),
         },
-        Kind::Radarr => Target::Curator {
+        Kind::Movies => Target::Curator {
             media_type: media::Kind::Movies.media_type().to_owned(),
         },
         Kind::Jellyfin => Target::MediaServer {
+            pins: pins.listed().to_vec(),
+        },
+        Kind::Emby => Target::Emby {
             pins: pins.listed().to_vec(),
         },
     }

@@ -6,8 +6,8 @@ use crate::fake::{raw, status, upstream};
 
 fn route(address: &str) -> Upstream {
     Upstream {
-        route: "sonarr".to_owned(),
-        kind: Kind::Sonarr,
+        route: "tv".to_owned(),
+        kind: Kind::Tv,
         address: address.to_owned(),
         credential: Credential::new("key"),
         majors: Vec::new(),
