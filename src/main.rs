@@ -15,6 +15,8 @@ mod formats;
 mod front;
 mod holding;
 mod jellyfin;
+#[cfg(test)]
+mod manifest;
 mod plex;
 mod plextv;
 mod serving;

@@ -43,9 +43,11 @@ run     = { args = ["version"] }
 expect  = { exit = 0, stdout_starts_with = "request-gate " }
 
 [[ask]]
-capability = "library.curate"
-each       = true
+capability  = "library.curate"
+each        = true
+media_types = ["tv", "movies"]
 
 [[ask]]
-capability = "identity.source"
-native     = ["jellyfin", "emby", "plex"]
+capability  = "identity.source"
+native      = ["jellyfin", "emby", "plex"]
+media_types = ["tv", "movies"]
