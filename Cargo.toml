@@ -19,10 +19,10 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 base64 = "0.23"
 # The contract it speaks and the kit that serves it, from the core at the commit the
 # train releases this build with.
-lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "bf525eadbff0d58952f8e3b5013ef360a9d000ee" }
-lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "bf525eadbff0d58952f8e3b5013ef360a9d000ee" }
-lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "bf525eadbff0d58952f8e3b5013ef360a9d000ee" }
-lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "bf525eadbff0d58952f8e3b5013ef360a9d000ee" }
+lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c" }
+lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c" }
+lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c" }
+lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c" }
 hyper = { version = "1", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio", "service"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
@@ -36,8 +36,9 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring"]
 url = "2"
 
 [dev-dependencies]
-lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "bf525eadbff0d58952f8e3b5013ef360a9d000ee", features = ["test-support"] }
+lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c", features = ["test-support"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
+toml = { version = "1", default-features = false, features = ["parse", "serde"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [lints.rust]
