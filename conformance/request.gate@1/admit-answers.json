@@ -1,5 +1,5 @@
 {
-  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:bffb4db55928e1ce5692fbc2268c484ee249f9c160a8d1fe9323a358ac928ac2",
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:26ab8469b48246cd44ace27e3353305030052024a57c876ff19e95a33da2e956",
   "note": "The case's routes, each with the credential the gate presents and the tokens it admits, written whole and owner-only into the gate's configuration directory.",
   "request": {"method": "POST", "path": "/lemonfiber/request.gate/v1/admit", "accept": "application/json"},
   "response": {
