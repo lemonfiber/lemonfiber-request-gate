@@ -1,5 +1,5 @@
 {
-  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:dc25ef362ee742cb1a55d9eb6b49daa4ee742a76de0ff59b6bc344188a84c8b8",
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:37a29263563997e0502eb6093168ccb71b51b57581e28e80e1180b88d891bc25",
   "note": "The routes the gate admits, read back from what it holds, each credential by its SHA-256 alone and every token by its SHA-256.",
   "request": {"method": "POST", "path": "/lemonfiber/request.gate/v1/admitted", "accept": "application/json"},
   "response": {
