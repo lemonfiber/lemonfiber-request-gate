@@ -3,8 +3,8 @@ use axum::http::{Method, StatusCode};
 use lemonfiber_ports::service::{OutsideAccount, OutsideServer, PlexLink, PlexMember};
 use serde_json::json;
 
-use super::{escaped, id, users};
-use crate::fake::{ask_on, json, upstream, Answered, Config, Fake};
+use super::{addressed, escaped, id, users};
+use crate::fake::{ask_on, json, status, upstream, Answered, Config, Fake};
 use crate::serving::front_routes;
 
 const GATE_TOKEN: &str = "the-gate-token";
@@ -49,7 +49,15 @@ async fn plex_tv() -> Fake {
     upstream(vec![json(
         Method::GET,
         "/users/account.json",
-        &json!({ "user": { "id": 91, "email": "bo@example.org" } }),
+        &json!({
+            "user": {
+                "id": 91,
+                "email": "Bo@Example.org",
+                "username": "bo",
+                "authToken": "bos-token",
+                "profile": { "recoveryEmail": "bo@example.org" },
+            }
+        }),
     )])
     .await
 }
@@ -205,7 +213,16 @@ async fn a_members_own_sign_in_is_passed_on_to_plex_tv_and_its_answer_handed_bac
     .await;
 
     assert_eq!(answered.status, StatusCode::OK);
-    assert_eq!(answered.json().pointer("/user/id"), Some(&json!(91)));
+    let user = answered.json();
+    assert_eq!(user.pointer("/user/id"), Some(&json!(91)));
+    assert_eq!(user.pointer("/user/username"), Some(&json!("bo")));
+    assert_eq!(user.pointer("/user/authToken"), Some(&json!("bos-token")));
+    assert_eq!(user.pointer("/user/email"), Some(&json!("91@plex.invalid")));
+    assert_eq!(
+        user.pointer("/user/profile/recoveryEmail"),
+        Some(&json!("91@plex.invalid"))
+    );
+    assert!(!answered.body.to_ascii_lowercase().contains("example.org"));
     let passed = accounts.sent("GET", "/users/account.json");
     assert_eq!(passed.len(), 1);
     assert_eq!(
@@ -400,4 +417,57 @@ async fn whose_each_token_is_is_kept_for_a_bounded_number_of_tokens_then_asked_a
         accounts.sent("GET", "/users/account.json").len(),
         super::KEPT + 2
     );
+}
+
+#[tokio::test]
+async fn a_members_refusal_is_handed_back_as_plex_tv_gave_it_and_an_account_without_an_id_is_not() {
+    let fake = plex().await;
+    let refusing = upstream(vec![status(
+        Method::GET,
+        "/users/account.json",
+        StatusCode::UNAUTHORIZED,
+    )])
+    .await;
+    let config = linked(&fake, fronted(), "front-member-refused");
+
+    let refused = front(
+        &config,
+        &refusing,
+        "plex.tv",
+        "/users/account.json",
+        Some("stale-token"),
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(refusing.sent("GET", "/users/account.json").len(), 1);
+
+    let idless = upstream(vec![json(
+        Method::GET,
+        "/users/account.json",
+        &json!({ "user": { "email": "bo@example.org" } }),
+    )])
+    .await;
+    let unread = front(
+        &config,
+        &idless,
+        "plex.tv",
+        "/users/account.json",
+        Some("bos-token"),
+    )
+    .await;
+    assert_eq!(unread.status, StatusCode::BAD_GATEWAY);
+    assert!(!unread.body.contains("example.org"));
+}
+
+#[test]
+fn an_account_without_an_address_is_given_one_and_one_named_by_no_id_is_none() {
+    assert_eq!(
+        addressed(json!({ "user": { "id": "7" } })),
+        Some(json!({ "user": { "id": "7", "email": "7@plex.invalid" } }))
+    );
+    assert_eq!(
+        addressed(json!({ "user": { "id": "x", "email": "a@b" } })),
+        None
+    );
+    assert_eq!(addressed(json!([{ "user": { "id": 7 } }])), None);
 }
