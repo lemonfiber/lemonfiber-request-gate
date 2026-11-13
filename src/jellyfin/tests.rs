@@ -236,8 +236,19 @@ async fn a_sign_in_on_a_device_the_request_service_does_not_assign_is_refused() 
         assert_eq!(answered.status, StatusCode::FORBIDDEN, "{authorisation:?}");
     }
     let quick = call(&config, Method::POST, "/QuickConnect/Initiate", None, None).await;
+    let checked = call(
+        &config,
+        Method::GET,
+        "/QuickConnect/Connect?secret=s",
+        Some(&on("someone")),
+        None,
+    )
+    .await;
 
-    assert_eq!(quick.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        (quick.status, checked.status),
+        (StatusCode::FORBIDDEN, StatusCode::FORBIDDEN)
+    );
     assert!(fake.seen().is_empty());
 }
 
@@ -386,6 +397,13 @@ async fn a_sign_in_answer_the_gate_cannot_read_goes_back_to_nobody() {
     if let Some(fields) = no_token.as_object_mut() {
         fields.remove("AccessToken");
     }
+    let mut unsendable = signed_in(true);
+    if let Some(fields) = unsendable.as_object_mut() {
+        fields.insert(
+            "AccessToken".to_owned(),
+            json!("a token\nwith a line break"),
+        );
+    }
     for answer in [
         raw(
             Method::POST,
@@ -399,6 +417,7 @@ async fn a_sign_in_answer_the_gate_cannot_read_goes_back_to_nobody() {
             &json!({ "AccessToken": "t" }),
         ),
         json(Method::POST, "/Users/AuthenticateByName", &no_token),
+        json(Method::POST, "/Users/AuthenticateByName", &unsendable),
     ] {
         let (config, fake) = gate("unreadable", vec![answer]).await;
 

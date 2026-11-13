@@ -214,17 +214,14 @@ impl Call {
                 reach,
                 asked,
                 Built::new(Method::POST, "/QuickConnect/Initiate"),
-                None,
             )?),
-            Self::QuickConnected => Plan::Forward(
-                on_device(
-                    reach,
-                    asked,
-                    Built::new(Method::GET, "/QuickConnect/Connect"),
-                    None,
-                )?
-                .query(parameters(query, &[("secret", Shape::Text)])?),
-            ),
+            Self::QuickConnected => {
+                let built = Built::new(Method::GET, "/QuickConnect/Connect");
+                Plan::Forward(
+                    on_device(reach, asked, built)?
+                        .query(parameters(query, &[("secret", Shape::Text)])?),
+                )
+            }
             Self::SignIn => {
                 let body = fields(
                     &object(asked)?,
@@ -306,16 +303,11 @@ fn keyed(reach: &Reach<'_>, method: Method, path: &str) -> Result<Built, Stop> {
     )
 }
 
-/// `built`, sent to `reach`'s media server as `asked` names it: from the request service's
-/// device, which must be one it assigns, carrying `token` where the call ends that session.
-fn on_device(
-    reach: &Reach<'_>,
-    asked: &Asked,
-    built: Built,
-    token: Option<&str>,
-) -> Result<Built, Stop> {
+/// `built`, sent to `reach`'s media server from the request service's device `asked` names,
+/// which must be one it assigns.
+fn on_device(reach: &Reach<'_>, asked: &Asked, built: Built) -> Result<Built, Stop> {
     let device = seerrs(asked.authorisation.get(DEVICE_ID))?;
-    identified(built, reach.upstream.kind, SEERR, &device, token)
+    identified(built, reach.upstream.kind, SEERR, &device, None)
 }
 
 /// `built`, from the client `client` on the device `device` and carrying `token` where
@@ -394,8 +386,11 @@ fn avatar(asked: &Asked) -> Result<Vec<(&'static str, String)>, Stop> {
 /// answer goes back with its token replaced by a value that opens nothing; an answer
 /// that cannot be read as either does not go back at all.
 async fn signed_in(reach: &Reach<'_>, asked: &Asked, built: Built) -> Result<Response, Stop> {
-    let built = on_device(reach, asked, built, None)?;
-    let answer = reach.send(built).await?;
+    let device = seerrs(asked.authorisation.get(DEVICE_ID))?;
+    let kind = reach.upstream.kind;
+    let answer = reach
+        .send(identified(built, kind, SEERR, &device, None)?)
+        .await?;
     if !answer.status().is_success() {
         return Ok(passed(answer));
     }
@@ -415,12 +410,8 @@ async fn signed_in(reach: &Reach<'_>, asked: &Asked, built: Built) -> Result<Res
         .get(ACCESS_TOKEN)
         .and_then(Value::as_str)
         .ok_or(Stop::Unreachable)?;
-    let logout = on_device(
-        reach,
-        asked,
-        Built::new(Method::POST, "/Sessions/Logout"),
-        Some(token),
-    )?;
+    let logout = Built::new(Method::POST, "/Sessions/Logout");
+    let logout = identified(logout, kind, SEERR, &device, Some(token))?;
     if !reach.send(logout).await?.status().is_success() {
         return Err(Stop::Unreachable);
     }
