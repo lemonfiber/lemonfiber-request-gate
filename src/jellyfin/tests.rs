@@ -11,6 +11,8 @@ use crate::fake::{
 /// The device the request service signs its owner in on, as it sends it.
 const OWNER: &str = "BOT_seerr";
 
+mod emby;
+
 /// A gate whose Jellyfin route reaches an upstream answering `answers`.
 async fn gate(name: &str, answers: Vec<Answer>) -> (Config, Fake) {
     let fake = upstream(answers).await;
@@ -234,8 +236,19 @@ async fn a_sign_in_on_a_device_the_request_service_does_not_assign_is_refused() 
         assert_eq!(answered.status, StatusCode::FORBIDDEN, "{authorisation:?}");
     }
     let quick = call(&config, Method::POST, "/QuickConnect/Initiate", None, None).await;
+    let checked = call(
+        &config,
+        Method::GET,
+        "/QuickConnect/Connect?secret=s",
+        Some(&on("someone")),
+        None,
+    )
+    .await;
 
-    assert_eq!(quick.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        (quick.status, checked.status),
+        (StatusCode::FORBIDDEN, StatusCode::FORBIDDEN)
+    );
     assert!(fake.seen().is_empty());
 }
 
@@ -384,6 +397,13 @@ async fn a_sign_in_answer_the_gate_cannot_read_goes_back_to_nobody() {
     if let Some(fields) = no_token.as_object_mut() {
         fields.remove("AccessToken");
     }
+    let mut unsendable = signed_in(true);
+    if let Some(fields) = unsendable.as_object_mut() {
+        fields.insert(
+            "AccessToken".to_owned(),
+            json!("a token\nwith a line break"),
+        );
+    }
     for answer in [
         raw(
             Method::POST,
@@ -397,6 +417,7 @@ async fn a_sign_in_answer_the_gate_cannot_read_goes_back_to_nobody() {
             &json!({ "AccessToken": "t" }),
         ),
         json(Method::POST, "/Users/AuthenticateByName", &no_token),
+        json(Method::POST, "/Users/AuthenticateByName", &unsendable),
     ] {
         let (config, fake) = gate("unreadable", vec![answer]).await;
 
@@ -716,114 +737,4 @@ async fn the_pinned_client_is_made_again_when_the_pins_change() {
         &[lemonfiber_pinned::sha256(b"another certificate")],
     );
     assert_eq!(public().await.status, StatusCode::BAD_GATEWAY);
-}
-
-/// Ask `config`'s gate `method` on `path` of the Emby route, with `authorisation`.
-async fn on_emby(config: &Config, method: Method, path: &str, authorisation: &str) -> Answered {
-    ask(
-        config.service(),
-        method,
-        &format!("/emby{path}"),
-        &[("authorization", authorisation)],
-        Body::empty(),
-    )
-    .await
-}
-
-#[tokio::test]
-async fn emby_is_answered_on_the_jellyfin_list_in_its_own_api() {
-    let fake = upstream(vec![
-        json(Method::GET, "/Users", &json!([{ "Id": "a1" }])),
-        json(Method::GET, "/Users/a1/Items/Latest", &json!([])),
-        raw(
-            Method::GET,
-            "/Users/a1/Images/Primary",
-            vec![("content-type", "image/png")],
-            "png",
-        ),
-        raw(Method::HEAD, "/Users/a1/Images/Primary", Vec::new(), ""),
-    ])
-    .await;
-    let config = Config::new("emby").with_emby(&fake);
-    let token = seerr(OWNER, Some(JELLYFIN_TOKEN));
-
-    let users = on_emby(&config, Method::GET, "/Users", &token).await;
-    let latest = on_emby(
-        &config,
-        Method::GET,
-        "/Users/a1/Items/Latest?Limit=12&ParentId=p1&userId=a1",
-        &token,
-    )
-    .await;
-    let avatar = on_emby(
-        &config,
-        Method::GET,
-        "/Users/a1/Images/Primary?quality=90",
-        "",
-    )
-    .await;
-    let checked = on_emby(&config, Method::HEAD, "/Users/a1/Images/Primary", "").await;
-
-    assert_eq!(users.json(), json!([{ "Id": "a1" }]));
-    assert_eq!(latest.status, StatusCode::OK);
-    assert_eq!(
-        (avatar.status, avatar.body.as_str()),
-        (StatusCode::OK, "png")
-    );
-    assert_eq!(checked.status, StatusCode::OK);
-    let sent_latest = fake.sent("GET", "/Users/a1/Items/Latest");
-    assert_eq!(
-        sent_latest.first().and_then(|one| one.query.clone()),
-        Some("Limit=12&ParentId=p1".to_owned())
-    );
-    assert!(sent_latest
-        .first()
-        .and_then(|one| one.header("authorization"))
-        .is_some_and(|sent| sent.contains(&format!("Token=\"{KEY}\""))));
-    let sent_avatar = fake.sent("GET", "/Users/a1/Images/Primary");
-    assert_eq!(
-        sent_avatar.first().and_then(|one| one.query.clone()),
-        Some("quality=90".to_owned())
-    );
-    assert!(sent_avatar
-        .first()
-        .and_then(|one| one.header("authorization"))
-        .is_none());
-}
-
-#[tokio::test]
-async fn each_media_server_is_answered_only_in_its_own_api() {
-    let fake = upstream(vec![
-        json(Method::GET, "/Items/Latest", &json!([])),
-        raw(Method::GET, "/UserImage", Vec::new(), "png"),
-        json(Method::GET, "/Users/a1/Items/Latest", &json!([])),
-        raw(Method::GET, "/Users/a1/Images/Primary", Vec::new(), "png"),
-    ])
-    .await;
-    let emby = Config::new("emby-own-api").with_emby(&fake);
-    let jellyfin = Config::new("jellyfin-own-api").with_upstream(&fake);
-    let token = seerr(OWNER, Some(JELLYFIN_TOKEN));
-
-    for path in [
-        "/Items/Latest",
-        "/UserImage?UserId=a1",
-        "/Users/a!/Images/Primary",
-    ] {
-        let answered = on_emby(&emby, Method::GET, path, &token).await;
-        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{path}");
-    }
-    for path in ["/Users/a1/Items/Latest", "/Users/a1/Images/Primary"] {
-        let answered = call(&jellyfin, Method::GET, path, Some(&token), None).await;
-        assert_eq!(answered.status, StatusCode::FORBIDDEN, "{path}");
-    }
-    let unshaped = on_emby(
-        &emby,
-        Method::GET,
-        "/Users/a1/Images/Primary?quality=high",
-        "",
-    )
-    .await;
-
-    assert_eq!(unshaped.status, StatusCode::FORBIDDEN);
-    assert!(fake.seen().is_empty());
 }
