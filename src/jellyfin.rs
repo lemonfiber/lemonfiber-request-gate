@@ -1,5 +1,7 @@
 //! The calls the gate answers on the Jellyfin route and the Emby route, and how it builds
-//! each. Emby is answered on the same list as Jellyfin, each call in Emby's own API.
+//! each. Emby is answered on the same list as Jellyfin, each call in Emby's own API: its
+//! paths, and its own headers for the device a call comes from and the token it carries.
+//! Emby has no Quick Connect, so those calls are refused on its route.
 //!
 //! Sign-in calls answer to the member's own credential and carry no token; the gate
 //! sends them under the request service's device, and ends any administrator's session
@@ -9,7 +11,7 @@
 
 use std::fmt::Write;
 
-use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use base64::Engine;
@@ -41,6 +43,15 @@ pub(crate) const TOKEN: &str = "Token";
 /// The authorisation header field naming the device a call comes from.
 const DEVICE_ID: &str = "DeviceId";
 
+/// The header Emby reads the client and the device a call comes from in.
+const EMBY_AUTHORISATION: HeaderName = HeaderName::from_static("x-emby-authorization");
+
+/// How the scheme of Emby's authorisation header is spelled.
+const EMBY_SCHEME: &str = "Emby ";
+
+/// The header Emby reads a call's token from.
+const EMBY_TOKEN: HeaderName = HeaderName::from_static("x-emby-token");
+
 /// The field of a sign-in's answer, and of a key, that holds the token itself.
 const ACCESS_TOKEN: &str = "AccessToken";
 
@@ -54,11 +65,11 @@ pub(crate) enum Call {
     PublicInfo,
     /// `POST /Users/AuthenticateByName`.
     SignIn,
-    /// `POST /QuickConnect/Initiate`.
+    /// `POST /QuickConnect/Initiate`, on Jellyfin.
     QuickConnect,
-    /// `GET /QuickConnect/Connect`.
+    /// `GET /QuickConnect/Connect`, on Jellyfin.
     QuickConnected,
-    /// `POST /Users/AuthenticateWithQuickConnect`.
+    /// `POST /Users/AuthenticateWithQuickConnect`, on Jellyfin.
     QuickConnectSignIn,
     /// `GET` or `HEAD /UserImage`, on Jellyfin.
     Avatar,
@@ -100,9 +111,11 @@ pub(crate) fn listed(kind: Kind, asked: &Asked) -> Option<Call> {
     let call = match (asked.method.clone(), segments.as_slice()) {
         (Method::GET, ["system", "info", "public"]) => Call::PublicInfo,
         (Method::POST, ["users", "authenticatebyname"]) => Call::SignIn,
-        (Method::POST, ["quickconnect", "initiate"]) => Call::QuickConnect,
-        (Method::GET, ["quickconnect", "connect"]) => Call::QuickConnected,
-        (Method::POST, ["users", "authenticatewithquickconnect"]) => Call::QuickConnectSignIn,
+        (Method::POST, ["quickconnect", "initiate"]) if !emby => Call::QuickConnect,
+        (Method::GET, ["quickconnect", "connect"]) if !emby => Call::QuickConnected,
+        (Method::POST, ["users", "authenticatewithquickconnect"]) if !emby => {
+            Call::QuickConnectSignIn
+        }
         (Method::GET | Method::HEAD, ["userimage"]) if !emby => Call::Avatar,
         (Method::GET | Method::HEAD, ["users", id, "images", "primary"]) if emby => {
             Call::UserAvatar(identifier(id)?)
@@ -197,14 +210,20 @@ impl Call {
                 Built::new(asked.method.clone(), format!("/Users/{id}/Images/Primary"))
                     .query(parameters(query, USER_AVATAR)?),
             ),
-            Self::QuickConnect => Plan::Forward(
-                Built::new(Method::POST, "/QuickConnect/Initiate")
-                    .header(header::AUTHORIZATION, device(asked, None)?),
-            ),
+            Self::QuickConnect => Plan::Forward(on_device(
+                reach,
+                asked,
+                Built::new(Method::POST, "/QuickConnect/Initiate"),
+                None,
+            )?),
             Self::QuickConnected => Plan::Forward(
-                Built::new(Method::GET, "/QuickConnect/Connect")
-                    .header(header::AUTHORIZATION, device(asked, None)?)
-                    .query(parameters(query, &[("secret", Shape::Text)])?),
+                on_device(
+                    reach,
+                    asked,
+                    Built::new(Method::GET, "/QuickConnect/Connect"),
+                    None,
+                )?
+                .query(parameters(query, &[("secret", Shape::Text)])?),
             ),
             Self::SignIn => {
                 let body = fields(
@@ -276,28 +295,68 @@ pub(crate) fn public_info() -> Built {
     Built::new(Method::GET, "/System/Info/Public")
 }
 
-/// `method` on `path`, under the gate's own key.
+/// `method` on `path` of `reach`'s media server, under the gate's own key.
 fn keyed(reach: &Reach<'_>, method: Method, path: &str) -> Result<Built, Stop> {
-    let key = authorisation(GATE, GATE, Some(reach.upstream.credential.reveal()))?;
-    Ok(Built::new(method, path).header(header::AUTHORIZATION, key))
+    identified(
+        Built::new(method, path),
+        reach.upstream.kind,
+        GATE,
+        GATE,
+        Some(reach.upstream.credential.reveal()),
+    )
 }
 
-/// The authorisation a sign-in carries: the request service's device, which must be one
-/// it assigns, and `token` where the call ends that session.
-fn device(asked: &Asked, token: Option<&str>) -> Result<HeaderValue, Stop> {
-    authorisation(SEERR, &seerrs(asked.authorisation.get(DEVICE_ID))?, token)
+/// `built`, sent to `reach`'s media server as `asked` names it: from the request service's
+/// device, which must be one it assigns, carrying `token` where the call ends that session.
+fn on_device(
+    reach: &Reach<'_>,
+    asked: &Asked,
+    built: Built,
+    token: Option<&str>,
+) -> Result<Built, Stop> {
+    let device = seerrs(asked.authorisation.get(DEVICE_ID))?;
+    identified(built, reach.upstream.kind, SEERR, &device, token)
 }
 
-/// A `MediaBrowser` authorisation from the client `client` on the device `device`,
-/// carrying `token` where there is one.
-fn authorisation(client: &str, device: &str, token: Option<&str>) -> Result<HeaderValue, Stop> {
-    let token = token
-        .map(|token| format!(", {TOKEN}=\"{token}\""))
-        .unwrap_or_default();
-    HeaderValue::from_str(&format!(
-        "{SCHEME}Client=\"{client}\", Device=\"{client}\", {DEVICE_ID}=\"{device}\", Version=\"{VERSION}\"{token}"
-    ))
-    .map_err(|_| Stop::Unreachable)
+/// `built`, from the client `client` on the device `device` and carrying `token` where
+/// there is one, as the media server `kind` names reads them: Jellyfin in its
+/// `MediaBrowser` authorisation, Emby in its `Emby` authorisation and its token header.
+fn identified(
+    built: Built,
+    kind: Kind,
+    client: &str,
+    device: &str,
+    token: Option<&str>,
+) -> Result<Built, Stop> {
+    let named = format!(
+        "Client=\"{client}\", Device=\"{client}\", {DEVICE_ID}=\"{device}\", Version=\"{VERSION}\""
+    );
+    if kind == Kind::Emby {
+        let built = built.header(EMBY_AUTHORISATION, value(&format!("{EMBY_SCHEME}{named}"))?);
+        return match token {
+            Some(token) => Ok(built.header(EMBY_TOKEN, secret(token)?)),
+            None => Ok(built),
+        };
+    }
+    match token {
+        Some(token) => Ok(built.header(
+            header::AUTHORIZATION,
+            secret(&format!("{SCHEME}{named}, {TOKEN}=\"{token}\""))?,
+        )),
+        None => Ok(built.header(header::AUTHORIZATION, value(&format!("{SCHEME}{named}"))?)),
+    }
+}
+
+/// `text` as a header's value.
+fn value(text: &str) -> Result<HeaderValue, Stop> {
+    HeaderValue::from_str(text).map_err(|_| Stop::Unreachable)
+}
+
+/// `text`, which carries a token, as a header's value marked as one not to show.
+fn secret(text: &str) -> Result<HeaderValue, Stop> {
+    let mut value = value(text)?;
+    value.set_sensitive(true);
+    Ok(value)
 }
 
 /// `sent`, where it names a device the request service assigns: its owner's, or a
@@ -335,7 +394,7 @@ fn avatar(asked: &Asked) -> Result<Vec<(&'static str, String)>, Stop> {
 /// answer goes back with its token replaced by a value that opens nothing; an answer
 /// that cannot be read as either does not go back at all.
 async fn signed_in(reach: &Reach<'_>, asked: &Asked, built: Built) -> Result<Response, Stop> {
-    let built = built.header(header::AUTHORIZATION, device(asked, None)?);
+    let built = on_device(reach, asked, built, None)?;
     let answer = reach.send(built).await?;
     if !answer.status().is_success() {
         return Ok(passed(answer));
@@ -356,8 +415,12 @@ async fn signed_in(reach: &Reach<'_>, asked: &Asked, built: Built) -> Result<Res
         .get(ACCESS_TOKEN)
         .and_then(Value::as_str)
         .ok_or(Stop::Unreachable)?;
-    let logout = Built::new(Method::POST, "/Sessions/Logout")
-        .header(header::AUTHORIZATION, device(asked, Some(token))?);
+    let logout = on_device(
+        reach,
+        asked,
+        Built::new(Method::POST, "/Sessions/Logout"),
+        Some(token),
+    )?;
     if !reach.send(logout).await?.status().is_success() {
         return Err(Stop::Unreachable);
     }
