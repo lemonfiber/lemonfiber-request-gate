@@ -56,6 +56,7 @@ async fn plex_tv() -> Fake {
                 "username": "bo",
                 "authToken": "bos-token",
                 "profile": { "recoveryEmail": "bo@example.org" },
+                "emails": ["bo@example.org", "other@example.net"],
             }
         }),
     )])
@@ -221,6 +222,10 @@ async fn a_members_own_sign_in_is_passed_on_to_plex_tv_and_its_answer_handed_bac
     assert_eq!(
         user.pointer("/user/profile/recoveryEmail"),
         Some(&json!("91@plex.invalid"))
+    );
+    assert_eq!(
+        user.pointer("/user/emails"),
+        Some(&json!(["91@plex.invalid", "other@example.net"]))
     );
     assert!(!answered.body.to_ascii_lowercase().contains("example.org"));
     let passed = accounts.sent("GET", "/users/account.json");
@@ -457,6 +462,24 @@ async fn a_members_refusal_is_handed_back_as_plex_tv_gave_it_and_an_account_with
     .await;
     assert_eq!(unread.status, StatusCode::BAD_GATEWAY);
     assert!(!unread.body.contains("example.org"));
+
+    let unreadable = upstream(vec![crate::fake::raw(
+        Method::GET,
+        "/users/account.json",
+        vec![("content-type", "text/html")],
+        "<p>bo@example.org</p>",
+    )])
+    .await;
+    let garbled = front(
+        &config,
+        &unreadable,
+        "plex.tv",
+        "/users/account.json",
+        Some("bos-token"),
+    )
+    .await;
+    assert_eq!(garbled.status, StatusCode::BAD_GATEWAY);
+    assert!(!garbled.body.contains("example.org"));
 }
 
 #[test]
