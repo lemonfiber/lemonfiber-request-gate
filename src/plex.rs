@@ -2,9 +2,13 @@
 //!
 //! The request service reads Plex's libraries and items, and nothing else. Every read
 //! goes upstream as the request service's own managed account, whatever token it was
-//! asked with, so Plex is read as that account in every mode.
+//! asked with, so Plex is read as that account in every mode. Which server it is comes
+//! back without the address of the plex.tv account that claimed it.
 
 use axum::http::{header, HeaderName, HeaderValue, Method};
+use axum::response::IntoResponse;
+use axum::Json;
+use serde_json::Value;
 
 use crate::asked::Asked;
 use crate::upstream::{Built, Plan, Reach, Stop};
@@ -23,6 +27,13 @@ const LISTING: [&str; 4] = ["includeGuids", "type", "sort", "addedAt>>"];
 
 /// The parameter an item's read carries.
 const CHILDREN: &str = "includeChildren";
+
+/// What Plex wraps each answer in.
+const CONTAINER: &str = "MediaContainer";
+
+/// Where Plex's answer to `GET /` names the plex.tv account that claimed it, by its
+/// address.
+const CLAIMED_BY: &str = "myPlexUsername";
 
 /// The longest id Plex files a library or an item under.
 const LONGEST_ID: usize = 20;
@@ -82,9 +93,13 @@ pub(crate) fn token(asked: &Asked) -> Option<&str> {
 
 impl Call {
     /// What the gate does with this call, made on `reach` by `asked`.
-    pub(crate) fn plan(self, reach: &Reach<'_>, asked: &Asked) -> Result<Plan, Stop> {
+    pub(crate) async fn plan(self, reach: &Reach<'_>, asked: &Asked) -> Result<Plan, Stop> {
         let built = match self {
-            Self::Status => keyed(reach, "/")?,
+            Self::Status => {
+                return Ok(Plan::Answer(
+                    Json(unnamed(reach.read(status(reach)?).await?)).into_response(),
+                ))
+            }
             Self::Sections => keyed(reach, "/library/sections")?,
             Self::Contents(id) => paged(
                 keyed(reach, &format!("/library/sections/{id}/all"))?
@@ -102,6 +117,14 @@ impl Call {
 /// `GET /` under the route's own credential: which server it is and what version it runs.
 pub(crate) fn status(reach: &Reach<'_>) -> Result<Built, Stop> {
     keyed(reach, "/")
+}
+
+/// `answer`, Plex's answer to `GET /`, without the plex.tv account that claimed it.
+fn unnamed(mut answer: Value) -> Value {
+    if let Some(server) = answer.get_mut(CONTAINER).and_then(Value::as_object_mut) {
+        server.remove(CLAIMED_BY);
+    }
+    answer
 }
 
 /// `GET path`, asked as the request service's own account and read as JSON.

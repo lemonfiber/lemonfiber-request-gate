@@ -347,7 +347,7 @@ async fn carried(service: &Service, upstream: &Upstream, asked: &Asked, call: Se
     }
     let plan = match call {
         Served::Jellyfin(call) => call.plan(&reach, asked).await,
-        Served::Plex(call) => call.plan(&reach, asked),
+        Served::Plex(call) => call.plan(&reach, asked).await,
     };
     match plan {
         Ok(Plan::Forward(built)) => sent(reach.send(built).await),

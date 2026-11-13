@@ -87,6 +87,32 @@ async fn each_read_on_the_list_goes_to_plex_as_the_request_services_own_account(
 }
 
 #[tokio::test]
+async fn which_server_it_is_comes_back_without_the_address_of_the_account_that_claimed_it() {
+    let mut claimed = status_of("1.43.4.10903-e5521bd8c");
+    if let Some(server) = claimed
+        .get_mut("MediaContainer")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        server.insert("myPlexUsername".to_owned(), json!("owner@example.org"));
+    }
+    let fake = upstream(vec![json(Method::GET, STATUS, &claimed)]).await;
+    let config = managed(&fake, "plex-status-unnamed");
+
+    let answered = ask_on(
+        plex_routes(config.service()),
+        Method::GET,
+        STATUS,
+        &[("X-Plex-Token", PLEX_TOKEN)],
+        Body::empty(),
+    )
+    .await;
+
+    assert_eq!(answered.status, StatusCode::OK);
+    assert_eq!(answered.json(), status_of("1.43.4.10903-e5521bd8c"));
+    assert!(!answered.body.contains("example.org"));
+}
+
+#[tokio::test]
 async fn a_listing_carries_only_the_parameters_and_paging_the_list_names() {
     let fake = plex().await;
     let config = managed(&fake, "plex-listing");

@@ -4,7 +4,7 @@
 //! The gate reaches plex.tv's `/users/account.json` alone. In `owner` mode it asks whose
 //! a token the request service presents is, once per token, keeping the token only as its
 //! hash beside the answer. In `fronted` mode it passes on a member's own sign-in there and
-//! hands back what came of it.
+//! hands back what came of it, under the address `<plex.tv id>@plex.invalid`.
 //!
 //! In `fronted` mode the request service resolves plex.tv to the gate, which answers it
 //! from what the core applied: the request service's own account, the household's accounts
@@ -38,6 +38,18 @@ const PLEX_TV: &str = "plex.tv";
 /// The domain every address the gate answers for an account is under, which no mail
 /// reaches.
 const NO_MAIL: &str = "plex.invalid";
+
+/// Where plex.tv's account answer holds the account.
+const USER: &str = "user";
+
+/// Where the account carries its address.
+const EMAIL: &str = "email";
+
+/// Where plex.tv's account answer holds the account's id.
+const USER_ID: &str = "/user/id";
+
+/// Where plex.tv's account answer holds the account's address.
+const USER_EMAIL: &str = "/user/email";
 
 /// How many tokens' owners are kept before every one is asked again.
 const KEPT: usize = 256;
@@ -92,7 +104,7 @@ impl PlexTv {
         } else if answer.status().is_success() {
             let read: Value = answer.json().await.map_err(|_| Stop::Unreachable)?;
             Some(
-                read.pointer("/user/id")
+                read.pointer(USER_ID)
                     .and_then(id)
                     .ok_or(Stop::Unreachable)?,
             )
@@ -107,11 +119,60 @@ impl PlexTv {
         Ok(owner)
     }
 
-    /// A member's own sign-in, passed on to plex.tv unchanged, and what came of it.
+    /// A member's own sign-in, passed on to plex.tv unchanged, and what came of it: an
+    /// account plex.tv answers carrying the address `<plex.tv id>@plex.invalid` in place of
+    /// the member's own, and any other answer as plex.tv gave it.
     pub(crate) async fn passed_on(&self, client: &reqwest::Client, token: &str) -> Response {
-        self.account(client, token)
-            .await
-            .map_or_else(|_| StatusCode::BAD_GATEWAY.into_response(), passed)
+        let Ok(answer) = self.account(client, token).await else {
+            return StatusCode::BAD_GATEWAY.into_response();
+        };
+        if !answer.status().is_success() {
+            return passed(answer);
+        }
+        let status = answer.status();
+        let Ok(read) = answer.json::<Value>().await else {
+            return StatusCode::BAD_GATEWAY.into_response();
+        };
+        match addressed(read) {
+            Some(account) => (status, Json(account)).into_response(),
+            None => StatusCode::BAD_GATEWAY.into_response(),
+        }
+    }
+}
+
+/// `account`, as plex.tv answers a member's own, with every place it carries the
+/// member's address carrying `<plex.tv id>@plex.invalid` instead; none where it names no
+/// account by an id.
+fn addressed(mut account: Value) -> Option<Value> {
+    let id = account.pointer(USER_ID).and_then(id)?;
+    let held = account
+        .pointer(USER_EMAIL)
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let address = address(&id);
+    if let Some(held) = held.filter(|held| !held.is_empty()) {
+        replaced(&mut account, &held, &address);
+    }
+    let user = account.get_mut(USER)?.as_object_mut()?;
+    user.insert(EMAIL.to_owned(), Value::String(address));
+    Some(account)
+}
+
+/// `value` with every string that is `held`, in any case, made `address`.
+fn replaced(value: &mut Value, held: &str, address: &str) {
+    match value {
+        Value::String(text) if text.eq_ignore_ascii_case(held) => address.clone_into(text),
+        Value::Array(items) => {
+            for item in items {
+                replaced(item, held, address);
+            }
+        }
+        Value::Object(fields) => {
+            for field in fields.values_mut() {
+                replaced(field, held, address);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -167,7 +228,7 @@ pub(crate) fn answered(call: Call, token: &str, link: &PlexLink) -> Option<Respo
         return None;
     };
     Some(match call {
-        Call::Account => Json(json!({ "user": user(account, token)? })).into_response(),
+        Call::Account => Json(json!({ USER: user(account, token)? })).into_response(),
         Call::Ping => Json(json!({ "pong": true })).into_response(),
         Call::Users => xml(&users(members, server)?),
         Call::Resources => xml(&resources(server)),
