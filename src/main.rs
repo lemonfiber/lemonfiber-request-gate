@@ -8,6 +8,7 @@
 mod arr;
 mod asked;
 mod curator;
+mod egress;
 #[cfg(test)]
 mod fake;
 mod files;
@@ -47,6 +48,13 @@ const PLEX: SocketAddr = SocketAddr::new(
 const FRONT: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 443);
 
+/// Where the egress, the gate's image run as `egress`, carries the gate's tunnels to plex.tv
+/// inside its own container.
+const EGRESS: SocketAddr = SocketAddr::new(
+    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+    egress::PORT,
+);
+
 /// Where the gate speaks `request.gate` inside its container, which the stack publishes
 /// on loopback alone.
 const CONTRACT: SocketAddr =
@@ -79,9 +87,10 @@ async fn main() -> ExitCode {
         None => {
             let settings = settings::Settings::from(|name| std::env::var(name).ok());
             let config = settings.config.clone();
-            let service = match serving::client() {
-                Ok(client) => serving::Service::new(settings, client),
-                Err(error) => {
+            let through = serving::through(settings.plex_tv_through.as_deref());
+            let service = match (serving::client(), through) {
+                (Ok(client), Ok(through)) => serving::Service::new(settings, client, through),
+                (Err(error), _) | (_, Err(error)) => {
                     eprintln!(
                         "request-gate: could not make the client every call is sent with: {error}"
                     );
@@ -106,13 +115,25 @@ async fn main() -> ExitCode {
                 }
             }
         }
-        Some("health") => serving::healthy(LISTEN.port()).await,
+        Some("egress") => {
+            if let Some(stopped) = egress::serve_at(
+                EGRESS,
+                egress::PLEX_TV.to_owned(),
+                Box::pin(std::future::pending()),
+            )
+            .await
+            {
+                eprintln!("request-gate: the egress is not answered on {EGRESS}: {stopped}");
+            }
+            ExitCode::FAILURE
+        }
+        Some("health") => serving::healthy(&[LISTEN.port(), egress::PORT]).await,
         Some("version") => {
             println!("request-gate {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         Some(other) => {
-            eprintln!("request-gate: no command called {other}; run it bare to serve, `health` to ask whether it is serving, or `version` to print its version");
+            eprintln!("request-gate: no command called {other}; run it bare to serve, `egress` to carry the gate's tunnels to plex.tv, `health` to ask whether it is serving, or `version` to print its version");
             ExitCode::from(2)
         }
     }

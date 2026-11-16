@@ -408,14 +408,16 @@ async fn whose_each_token_is_is_kept_for_a_bounded_number_of_tokens_then_asked_a
         &json!({ "user": { "id": 4242 } }),
     )])
     .await;
-    let plex_tv = super::PlexTv::at(&accounts.address);
-    let client = crate::serving::client().unwrap_or_default();
+    let plex_tv = super::PlexTv::at(
+        &accounts.address,
+        crate::serving::client().unwrap_or_default(),
+    );
 
     for at in 0..=super::KEPT {
-        let owner = plex_tv.owner(&client, &format!("token-{at}")).await;
+        let owner = plex_tv.owner(&format!("token-{at}")).await;
         assert_eq!(owner.ok().flatten().as_deref(), Some("4242"));
     }
-    let first_again = plex_tv.owner(&client, "token-0").await;
+    let first_again = plex_tv.owner("token-0").await;
 
     assert_eq!(first_again.ok().flatten().as_deref(), Some("4242"));
     assert_eq!(

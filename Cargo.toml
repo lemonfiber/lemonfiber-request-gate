@@ -19,10 +19,10 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 base64 = "0.23"
 # The contract it speaks and the kit that serves it, from the core at the commit the
 # train releases this build with.
-lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c" }
-lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c" }
-lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c" }
-lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c" }
+lemonfiber-adapter-kit = { git = "https://github.com/lemonfiber/lemonfiber", rev = "71dfddb44ca9e577e26329e3982464a4c9b5a95b" }
+lemonfiber-contract = { git = "https://github.com/lemonfiber/lemonfiber", rev = "71dfddb44ca9e577e26329e3982464a4c9b5a95b" }
+lemonfiber-ports = { git = "https://github.com/lemonfiber/lemonfiber", rev = "71dfddb44ca9e577e26329e3982464a4c9b5a95b" }
+lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "71dfddb44ca9e577e26329e3982464a4c9b5a95b" }
 hyper = { version = "1", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio", "service"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
@@ -31,12 +31,12 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rustls-pki-types = { version = "1", features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "signal", "sync"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "signal", "sync", "time"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 url = "2"
 
 [dev-dependencies]
-lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "4d13f8d0d12bc8c6da3049198fa701e67520af0c", features = ["test-support"] }
+lemonfiber-pinned = { git = "https://github.com/lemonfiber/lemonfiber", rev = "71dfddb44ca9e577e26329e3982464a4c9b5a95b", features = ["test-support"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 toml = { version = "1", default-features = false, features = ["parse", "serde"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }

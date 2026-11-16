@@ -26,7 +26,7 @@ use crate::{arr, jellyfin, plex, plextv};
 use lemonfiber_ports::service::PlexLink;
 
 /// The path the image's health check asks.
-const HEALTH: &str = "/health";
+pub(crate) const HEALTH: &str = "/health";
 
 /// The most of a call's body the gate reads: far more than any write on the list
 /// carries, and a bound on what one call can make it hold.
@@ -43,16 +43,22 @@ pub(crate) struct Service {
 }
 
 impl Service {
-    /// A service over `settings`, sending every call to a curator's adapter with `client`.
-    pub(crate) fn new(settings: Settings, client: reqwest::Client) -> Arc<Self> {
-        Self::reaching(settings, client, plextv::BASE)
+    /// A service over `settings`, sending every call to a curator's adapter with `client`,
+    /// and every call to plex.tv with `through`.
+    pub(crate) fn new(
+        settings: Settings,
+        client: reqwest::Client,
+        through: reqwest::Client,
+    ) -> Arc<Self> {
+        Self::reaching(settings, client, through, plextv::BASE)
     }
 
     /// A service over `settings`, sending every call with `client`, that reaches plex.tv at
-    /// `plex_tv`.
+    /// `plex_tv` with `through`.
     pub(crate) fn reaching(
         settings: Settings,
         client: reqwest::Client,
+        through: reqwest::Client,
         plex_tv: &str,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -60,7 +66,7 @@ impl Service {
             client,
             pinned: tokio::sync::Mutex::new(None),
             versions: Versions::default(),
-            plex_tv: PlexTv::at(plex_tv),
+            plex_tv: PlexTv::at(plex_tv, through),
         })
     }
 
@@ -83,10 +89,19 @@ impl Service {
 /// The client every call is sent with. It goes only where the gate sends it: it
 /// follows no redirect and goes through no proxy the environment names.
 pub(crate) fn client() -> Result<reqwest::Client, reqwest::Error> {
-    lemonfiber_adapter_kit::web::client_builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .no_proxy()
-        .build()
+    through(None)
+}
+
+/// The client every call to plex.tv is sent with: as [`client`], through the egress at
+/// `egress` where one is named, which carries its TLS to plex.tv unread.
+pub(crate) fn through(egress: Option<&str>) -> Result<reqwest::Client, reqwest::Error> {
+    let built =
+        lemonfiber_adapter_kit::web::client_builder().redirect(reqwest::redirect::Policy::none());
+    match egress {
+        Some(egress) => built.proxy(reqwest::Proxy::https(egress)?),
+        None => built.no_proxy(),
+    }
+    .build()
 }
 
 /// The routes the gate answers: its health, and every call, which is matched against
@@ -239,7 +254,7 @@ async fn admitted(service: &Service, upstream: &Upstream, token: Option<&str>) -
     match &upstream.link {
         Some(PlexLink::Owner { account }) => service
             .plex_tv
-            .owner(&service.client, token)
+            .owner(token)
             .await
             .is_ok_and(|owner| owner.as_deref() == Some(account.as_str())),
         _ => service.files.accepts(&upstream.route, Some(token)).await,
@@ -280,7 +295,7 @@ async fn answer_front(State(service): State<Arc<Service>>, request: Request) -> 
     let answer = match (gate_token, call, &upstream.link) {
         (true, call, Some(link)) => plextv::answered(call, token, link),
         (false, plextv::Call::Account, Some(PlexLink::Fronted { .. })) => {
-            Some(service.plex_tv.passed_on(&service.client, token).await)
+            Some(service.plex_tv.passed_on(token).await)
         }
         _ => None,
     };
@@ -399,12 +414,17 @@ async fn refused(service: &Service, asked: &Asked) -> Response {
     StatusCode::FORBIDDEN.into_response()
 }
 
-/// Whether the service on this container's `port` answers its health.
+/// Whether the service on one of this container's `ports` answers its health: the gate's,
+/// or the egress's where the image runs as the egress.
 ///
 /// The image is distroless, with no shell and no HTTP client, so its health check
 /// is this binary asking itself over loopback.
-pub(crate) async fn healthy(port: u16) -> ExitCode {
-    if answers_ok(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await {
+pub(crate) async fn healthy(ports: &[u16]) -> ExitCode {
+    let mut answering = false;
+    for port in ports {
+        answering = answering || answers_ok(SocketAddr::from((Ipv4Addr::LOCALHOST, *port))).await;
+    }
+    if answering {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE

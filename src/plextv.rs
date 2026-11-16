@@ -57,28 +57,27 @@ const KEPT: usize = 256;
 /// What the gate calls plex.tv's front in its record.
 pub(crate) const ROUTE: &str = "plex.tv";
 
-/// plex.tv, reached at `base`, and whose each token it was asked about is.
+/// plex.tv, reached at `base` with the client every call to it is sent with, and whose
+/// each token it was asked about is.
 pub(crate) struct PlexTv {
     base: String,
+    client: reqwest::Client,
     owners: Mutex<HashMap<TokenHash, Option<String>>>,
 }
 
 impl PlexTv {
-    /// plex.tv, reached at `base`.
-    pub(crate) fn at(base: impl Into<String>) -> Self {
+    /// plex.tv, reached at `base` with `client`.
+    pub(crate) fn at(base: impl Into<String>, client: reqwest::Client) -> Self {
         Self {
             base: base.into(),
+            client,
             owners: Mutex::new(HashMap::new()),
         }
     }
 
     /// The answer to `/users/account.json` asked with `token`.
-    async fn account(
-        &self,
-        client: &reqwest::Client,
-        token: &str,
-    ) -> Result<reqwest::Response, Stop> {
-        client
+    async fn account(&self, token: &str) -> Result<reqwest::Response, Stop> {
+        self.client
             .get(format!("{}{ACCOUNT}", self.base))
             .header(TOKEN, token)
             .header(header::ACCEPT, "application/json")
@@ -89,16 +88,12 @@ impl PlexTv {
 
     /// The plex.tv id of the account `token` is, none where plex.tv refuses it, asked once
     /// per token.
-    pub(crate) async fn owner(
-        &self,
-        client: &reqwest::Client,
-        token: &str,
-    ) -> Result<Option<String>, Stop> {
+    pub(crate) async fn owner(&self, token: &str) -> Result<Option<String>, Stop> {
         let hash = TokenHash::of(token);
         if let Some(known) = self.owners.lock().await.get(&hash) {
             return Ok(known.clone());
         }
-        let answer = self.account(client, token).await?;
+        let answer = self.account(token).await?;
         let owner = if answer.status() == StatusCode::UNAUTHORIZED {
             None
         } else if answer.status().is_success() {
@@ -122,8 +117,8 @@ impl PlexTv {
     /// A member's own sign-in, passed on to plex.tv unchanged, and what came of it: an
     /// account plex.tv answers carrying the address `<plex.tv id>@plex.invalid` in place of
     /// the member's own, and any other answer as plex.tv gave it.
-    pub(crate) async fn passed_on(&self, client: &reqwest::Client, token: &str) -> Response {
-        let Ok(answer) = self.account(client, token).await else {
+    pub(crate) async fn passed_on(&self, token: &str) -> Response {
+        let Ok(answer) = self.account(token).await else {
             return StatusCode::BAD_GATEWAY.into_response();
         };
         if !answer.status().is_success() {
