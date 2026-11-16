@@ -167,7 +167,9 @@ impl Config {
         Service::new(
             Settings {
                 config: self.path(),
+                plex_tv_through: None,
             },
+            crate::serving::client().unwrap_or_default(),
             crate::serving::client().unwrap_or_default(),
         )
     }
@@ -177,7 +179,9 @@ impl Config {
         Service::reaching(
             Settings {
                 config: self.path(),
+                plex_tv_through: None,
             },
+            crate::serving::client().unwrap_or_default(),
             crate::serving::client().unwrap_or_default(),
             plex_tv,
         )

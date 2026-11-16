@@ -60,6 +60,7 @@ fn a_film_download_names_its_film_and_the_time_left_from_now() {
         state: DownloadState::Warning,
         download_id: None,
         episode: None,
+        queued: None,
     }];
 
     let answered = queue(Kind::Movies, &downloading, 0);

@@ -365,7 +365,7 @@ async fn the_health_check_reads_a_serving_service_as_healthy() {
     tokio::spawn(async move { axum::serve(listener, app).await });
 
     assert!(answers_ok(at).await);
-    assert_eq!(healthy(at.port()).await, ExitCode::SUCCESS);
+    assert_eq!(healthy(&[at.port()]).await, ExitCode::SUCCESS);
 }
 
 #[tokio::test]
@@ -379,7 +379,33 @@ async fn the_health_check_reads_nothing_listening_as_unhealthy() {
     drop(listener);
 
     assert!(!answers_ok(at).await);
-    assert_eq!(healthy(at.port()).await, ExitCode::FAILURE);
+    assert_eq!(healthy(&[at.port()]).await, ExitCode::FAILURE);
+}
+
+#[tokio::test]
+async fn the_health_check_reads_the_egress_as_healthy_where_the_image_runs_as_the_egress() {
+    let gate = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await;
+    let egress = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await;
+    let (Ok(gate), Ok(egress)) = (gate, egress) else {
+        return;
+    };
+    let (Ok(gate_at), Ok(egress_at)) = (gate.local_addr(), egress.local_addr()) else {
+        return;
+    };
+    drop(gate);
+    tokio::spawn(async move {
+        crate::egress::serve(
+            &egress,
+            "127.0.0.1:1".to_owned(),
+            Box::pin(std::future::pending()),
+        )
+        .await
+    });
+
+    assert_eq!(
+        healthy(&[gate_at.port(), egress_at.port()]).await,
+        ExitCode::SUCCESS
+    );
 }
 
 #[tokio::test]
@@ -454,4 +480,11 @@ async fn a_status_an_upstream_answered_the_gates_own_read_with_is_handed_back() 
 
     assert_eq!(answered.status(), StatusCode::NOT_FOUND);
     assert!(config.recorded().is_empty());
+}
+
+#[test]
+fn plex_tv_is_reached_through_an_egress_named_as_an_address_and_nothing_else() {
+    assert!(super::through(Some("http://request-gate-egress:3128")).is_ok());
+    assert!(super::through(Some("not an address")).is_err());
+    assert!(super::through(None).is_ok());
 }

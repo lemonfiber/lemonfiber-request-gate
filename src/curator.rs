@@ -57,7 +57,7 @@ impl Curator {
 
     /// Every title it holds.
     pub(crate) async fn titles(&self) -> Result<Vec<CuratedTitle>, Stop> {
-        self.read(self.adapter.titles(self.media).await)
+        self.read(self.adapter.titles(self.media.into()).await)
     }
 
     /// The title it holds as `id`, or none.
@@ -72,7 +72,7 @@ impl Curator {
 
     /// Search for what it wants of the title it holds as `id`.
     pub(crate) async fn search(&self, id: i64) -> Result<(), Stop> {
-        self.read(self.adapter.search(self.media, id).await)
+        self.read(self.adapter.search(self.media.into(), id).await)
     }
 
     /// Remove the title it holds as `id`, with its files.
@@ -82,7 +82,7 @@ impl Curator {
 
     /// What it is downloading.
     pub(crate) async fn downloading(&self) -> Result<Vec<Downloading>, Stop> {
-        self.read(self.adapter.downloading(self.media).await)
+        self.read(self.adapter.downloading(self.media.into()).await)
     }
 
     /// Its quality profiles.
@@ -127,13 +127,19 @@ impl Http for Sent {
     }
 
     async fn fetch(&self, request: &Request, most: usize) -> Result<Fetched, Unreachable> {
-        let unreached = |_| Unreachable::once(&request.url, "the adapter did not answer");
+        let unreached = |why: reqwest::Error| Unreachable {
+            connected: !why.is_connect(),
+            ..Unreachable::once(&request.url, "the adapter did not answer")
+        };
         let mut built = self.0.request(method(request.method), &request.url);
         for (name, value) in &request.headers {
             built = built.header(name, value);
         }
         if let Some(body) = &request.body {
             built = built.body(body.clone());
+        }
+        if let Some(deadline) = request.deadline {
+            built = built.timeout(deadline);
         }
         let mut answer = built.send().await.map_err(unreached)?;
         let status = answer.status().as_u16();
