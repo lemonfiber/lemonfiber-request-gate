@@ -22,12 +22,32 @@ criticality   = "important"
 memory_mib    = 32
 mem_limit_mib = 64
 reaches       = "plex.tv"
-asks_for      = "Where Plex is the media server, plex.tv's account read alone: whose a token Seerr presents is, once per token, when Seerr's owner is the operator's own Plex account, and a member's own Plex sign-in, passed on unchanged, when Seerr reaches plex.tv through the gate. Otherwise nothing beyond this machine. It answers only Seerr, and makes the calls Seerr's requests, scans and sign-ins need of each curator's adapter and the media server, over networks it shares with them alone."
+asks_for      = "Where Plex is the media server, plex.tv's account read alone, through its egress service and never over a route of its own: whose a token Seerr presents is, once per token, when Seerr's owner is the operator's own Plex account, and a member's own Plex sign-in, passed on unchanged, when Seerr reaches plex.tv through the gate. Otherwise nothing beyond this machine. It answers only Seerr, and makes the calls Seerr's requests, scans and sign-ins need of each curator's adapter and the media server, over networks it shares with them alone."
 posture       = "confined"
 replaces      = "request-gate"
 provides      = ["request.gate"]
 contract      = 5058
 speaks        = ["request.gate@1"]
+
+[service.env]
+LEMONFIBER_REQUEST_GATE_PLEX_TV_THROUGH = "http://request-gate-egress:3128"
+
+[[service]]
+id            = "request-gate-egress"
+name          = "Request gate egress"
+image         = "ghcr.io/lemonfiber/request-gate"
+digest        = "sha256:48ac7e1fa3fe606accd47929b4535b1880bc2b761e3aa3dec460a1f4bd6b333d"
+tag           = "main-3633147d2dab"
+args          = ["egress"]
+listens       = 3128
+health        = { kind = "container" }
+criticality   = "optional"
+memory_mib    = 16
+mem_limit_mib = 32
+reaches       = "plex.tv"
+asks_for      = "A tunnel to plex.tv's port 443 for the request gate alone, through which the gate makes its one plex.tv call over its own TLS, so nothing here reads it. It holds no secret and no configuration, and refuses a tunnel to anywhere else."
+posture       = "confined"
+network       = { egress_for = "request-gate" }
 
 [[proof]]
 id      = "request-gate.names-itself"
@@ -43,11 +63,13 @@ run     = { args = ["version"] }
 expect  = { exit = 0, stdout_starts_with = "request-gate " }
 
 [[ask]]
+service     = "request-gate"
 capability  = "library.curate"
 each        = true
 media_types = ["tv", "movies"]
 
 [[ask]]
+service     = "request-gate"
 capability  = "identity.source"
 native      = ["jellyfin", "emby", "plex"]
 media_types = ["tv", "movies"]
