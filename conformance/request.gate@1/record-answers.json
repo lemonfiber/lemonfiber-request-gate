@@ -1,5 +1,5 @@
 {
-  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:8834f3c11386059ca1f08c3cba84250388e57b200da20455784c86ee220ec0da",
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:48ac7e1fa3fe606accd47929b4535b1880bc2b761e3aa3dec460a1f4bd6b333d",
   "note": "What the gate refused and what removals it passed on after the entry asked for: nothing, since no call reached it while it was recorded.",
   "request": {"method": "POST", "path": "/lemonfiber/request.gate/v1/record", "accept": "application/json"},
   "response": {
