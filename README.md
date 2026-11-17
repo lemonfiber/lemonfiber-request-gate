@@ -43,6 +43,12 @@ plex.tv through the gate, the gate answers plex.tv's calls in its place from wha
 lemonfiber hands it, giving every account an address under `plex.invalid` and never
 one your household holds, and passes a member's own Plex sign-in on to plex.tv.
 
+The gate itself has no route off your machine. Its plex.tv calls go out through a
+second service from the same image, `request-gate-egress`, which holds no secret and no
+configuration, shares a network with the gate alone, and answers nothing but a tunnel to
+plex.tv's port 443. The gate's own TLS to plex.tv runs through that tunnel, so the egress
+reads nothing it carries.
+
 The list of calls is in [`src/arr.rs`](src/arr.rs) (the curators' routes),
 [`src/jellyfin.rs`](src/jellyfin.rs) (Jellyfin and Emby), [`src/plex.rs`](src/plex.rs) and
 [`src/plextv.rs`](src/plextv.rs) (plex.tv).
@@ -53,8 +59,8 @@ The list of calls is in [`src/arr.rs`](src/arr.rs) (the curators' routes),
 | --- | --- |
 | Listens on | Port 5057 inside its container, on the stack's internal networks only, for the request service; port 32400 for its Plex route, in Plex's own API; port 443 for plex.tv's calls over TLS, which the request service reaches by plex.tv's own names when it is set to; and port 5058 for lemonfiber's `request.gate` contract, published on loopback alone |
 | Configuration | `/config`: the key lemonfiber asks the contract with (`lemonfiber.key`); the routes and tokens lemonfiber hands the gate, `upstreams.json` (where each curator's adapter and the media server is, the key the gate presents there, for the media server the SHA-256 of each certificate its internal TLS port may present, and for Plex how Seerr is linked to it) and `tokens.json` (hashes of the tokens Seerr may present); `plex-tv/certificate.pem` and `plex-tv/key.pem`, the certificate lemonfiber makes for plex.tv's names, where Seerr reaches plex.tv through the gate; and `record.json` (the refusals and removals, written by the gate and answered over `request.gate`) |
-| Settings | `LEMONFIBER_REQUEST_GATE_CONFIG` moves the configuration directory; `LEMONFIBER_REQUEST_GATE_PLEX_TV_THROUGH` names an HTTPS proxy's address that plex.tv is reached through, where it is set |
-| Egress | `request-gate egress`: port 3128 inside its container, answering only a tunnel to `plex.tv:443` and its own health, carrying the TLS inside the tunnel unread ([`src/egress.rs`](src/egress.rs)) |
+| Settings | `LEMONFIBER_REQUEST_GATE_CONFIG` moves the configuration directory; `LEMONFIBER_REQUEST_GATE_PLEX_TV_THROUGH` names an HTTPS proxy's address that plex.tv is reached through, which the stack sets to `http://request-gate-egress:3128` |
+| Egress | `request-gate egress`, run as the `request-gate-egress` service: port 3128 inside its container, answering only a tunnel to `plex.tv:443` and its own health, carrying the TLS inside the tunnel unread ([`src/egress.rs`](src/egress.rs)) |
 | Health check | `request-gate health`, which asks the running gate, or the running egress, over loopback |
 | Version | `request-gate version`, which prints `request-gate` and its version to standard output |
 | Container | Distroless base, non-root user, read-only root filesystem, no kernel capabilities |
