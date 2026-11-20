@@ -1,5 +1,5 @@
 {
-  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:c7ad012a0f3febe7ddf0fb1a419da3bfd8f0869406fb3d0e4dd08bc4f8d1e7d8",
+  "recorded_from": "ghcr.io/lemonfiber/request-gate@sha256:a116b9939ef25e463d0684b2e3e1540d5e9df8a8bb98ca3edd7336d2a9219c10",
   "note": "Asked without the plugin's key: the kit refuses it before the gate's holding is reached.",
   "request": {"method": "POST", "path": "/lemonfiber/request.gate/v1/admit", "accept": "application/json"},
   "response": {"status": 401}
