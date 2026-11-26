@@ -1,15 +1,17 @@
 # What this repository implements, one row per requirement (OPS-R74).
 #
-# `done` means the requirement is met in full by what is here, `partial` that this
-# repository holds its part and the rest lives elsewhere, `open` that nothing here
-# meets it yet. The release gate and the no-stubs gate read this file; a pull
-# request that changes whether a requirement is met changes its row.
+# Each row records this repository's own share of the requirement: `done` where that
+# share is built and tested here, `partial` where part of it is, `open` where none of
+# it is yet. Where a requirement also binds the core or another part, their trackers
+# record those shares. The release gate and the no-stubs gate read this file, and a
+# `partial` or `open` row here holds the requirement open; a pull request that changes
+# whether this share is met changes its row.
 #
 # The stack's side of the containment (no published port, the two internal
 # networks, no data mount, a read-only root, no capabilities) is the compose entry
-# the core writes from this repository's `plugin.toml`; minting and rotating the tokens, registering the
-# gate with the request service, and the doctor check that reads the record are
-# the core's.
+# the core writes from this repository's `plugin.toml`; minting and rotating the tokens
+# and the request keys, registering the gate with the request service, and the doctor
+# check that reads the record are the core's.
 
 requirement = [
   { id = "C6-R20", state = "partial", evidence = ["src/arr.rs", "src/jellyfin.rs", "src/arr/tests/forwarding.rs::a_call_off_the_list_or_on_the_other_routes_list_is_refused_and_recorded"] },
@@ -21,10 +23,10 @@ requirement = [
   { id = "C6-R28", state = "done", evidence = ["src/plextv.rs", "src/front.rs", "src/plextv/tests.rs::ping_users_and_resources_are_answered_from_what_the_core_applied", "src/plextv/tests.rs::a_members_own_sign_in_is_passed_on_to_plex_tv_and_its_answer_handed_back", "src/plextv/tests.rs::every_other_call_is_refused_recorded_and_sent_nowhere", "src/front/tests.rs::the_front_answers_over_tls_on_the_certificate_the_core_wrote", "src/egress.rs", "src/egress/tests.rs::a_tunnel_anywhere_else_or_any_other_request_is_refused_and_carried_nowhere", "src/egress/tests.rs::only_a_tunnel_to_plex_tvs_port_443_named_exactly_is_carried", "src/settings/tests.rs::plex_tv_is_reached_through_the_egress_the_stack_names_and_directly_otherwise", "plugin.toml", "lemonfiber:crates/lemonfiber-core/src/project/tests/fronted.rs::fronted_has_the_gate_answer_to_plex_tv_and_the_request_service_trust_its_authority", "lemonfiber:crates/lemonfiber-core/src/certificate/fronted/tests.rs::the_authority_signs_one_certificate_for_plex_tv_alone_and_the_gate_alone_reads_it", "lemonfiber:crates/lemonfiber-core/src/topology/tests.rs::an_egress_service_alone_reaches_off_the_host_and_shares_one_network_with_what_it_carries"] },
   { id = "C6-R29", state = "done", evidence = ["src/arr.rs", "src/arr/written.rs", "src/curator.rs", "src/arr/tests/reads.rs::the_status_names_the_api_each_route_presents_and_asks_nobody", "src/arr/tests/additions.rs::a_series_is_requested_with_the_seasons_monitored_anime_and_later_seasons_and_a_search", "src/arr/tests/reads.rs::one_title_is_the_one_held_and_one_not_held_is_not_found", "src/arr/tests/forwarding.rs::a_curator_that_does_not_take_requests_is_answered_503_naming_what_it_files", "src/manifest.rs::each_ask_names_the_media_the_gate_routes"] },
   { id = "C6-R30", state = "done", evidence = ["src/jellyfin.rs", "src/jellyfin/tests/emby.rs::emby_is_answered_on_the_jellyfin_list_in_its_own_api", "src/jellyfin/tests/emby.rs::every_library_read_goes_to_emby_under_the_gates_own_key_in_embys_headers", "src/jellyfin/tests/emby.rs::an_administrators_emby_session_is_ended_in_embys_headers_and_its_token_replaced", "src/jellyfin/tests/emby.rs::a_members_emby_sign_in_goes_back_as_it_came_and_another_device_is_refused", "src/jellyfin/tests/emby.rs::emby_ends_only_the_request_services_sessions_and_the_gate_answers_the_key_mint", "src/jellyfin/tests/emby.rs::quick_connect_which_emby_has_not_is_refused_on_its_route_and_recorded", "src/jellyfin/tests/emby.rs::a_read_without_the_emby_routes_token_is_answered_401", "src/version/tests.rs::emby_on_another_major_is_answered_503_naming_emby"] },
-  { id = "ARCH-R386", state = "partial", evidence = ["src/curator.rs", "src/arr/tests/reads.rs::the_profiles_and_folders_are_the_curators_asked_under_the_request_key"] },
+  { id = "ARCH-R386", state = "done", evidence = ["src/curator.rs", "src/holding.rs", "src/arr/tests/reads.rs::the_profiles_and_folders_are_the_curators_asked_under_the_request_key", "src/arr/tests/reads.rs::every_title_is_the_curators_titles_and_one_reference_picks_its_own", "src/arr/tests/reads.rs::one_title_is_the_one_held_and_one_not_held_is_not_found", "src/arr/tests/reads.rs::a_lookup_by_reference_is_the_catalogues_title_and_by_name_its_entries", "src/arr/tests/reads.rs::the_queue_is_what_the_curator_is_downloading", "src/arr/tests/additions.rs::a_series_is_requested_with_the_seasons_monitored_anime_and_later_seasons_and_a_search", "src/arr/tests/changes.rs::a_search_asks_the_curator_to_search_each_title_named", "src/arr/tests/changes.rs::a_removal_with_its_files_and_no_exclusion_asks_the_curator_to_remove", "src/holding/tests.rs::routes_admitted_again_leave_none_of_the_earlier_ones"] },
   { id = "ARCH-R387", state = "done", evidence = ["src/holding.rs", "src/holding/tests.rs::an_emby_route_is_held_as_emby_reached_over_tls_alone", "src/serving.rs", "src/jellyfin/tests/emby.rs::each_media_server_is_answered_only_in_its_own_api", "plugin.toml::\"emby\""] },
   { id = "D1-R12", state = "partial", evidence = ["src/version.rs", "src/version/tests.rs"] },
   { id = "D1-R19", state = "partial", evidence = ["src/serving.rs", "src/jellyfin/tests.rs::the_servers_name_and_an_avatar_go_upstream_with_no_credential"] },
-  { id = "F14-R1", state = "open" },
-  { id = "F14-R7", state = "open" },
+  { id = "F14-R1", state = "done", evidence = ["src/speaking.rs", "src/holding.rs", "src/curator.rs", "plugin.toml", "src/speaking/tests.rs::it_says_it_speaks_request_gate_for_itself", "src/speaking/tests.rs::the_core_admits_routes_and_reads_them_back_over_the_contract", "src/speaking/tests.rs::a_caller_without_the_plugins_key_is_refused_and_changes_nothing", "src/speaking/tests.rs::with_its_key_written_it_answers_the_core_on_the_contract_port"] },
+  { id = "F14-R7", state = "done", evidence = ["plugin.toml", "proofs.json", "conformance/request.gate@1/admit-answers.json", "conformance/request.gate@1/admit_tokens-answers.json", "conformance/request.gate@1/admitted-answers.json", "conformance/request.gate@1/record-answers.json", "conformance/request.gate@1/refuses-without-the-key.json", ".github/workflows/plugin.yml"] },
 ]
