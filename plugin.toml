@@ -14,8 +14,8 @@ forms       = ["library", "full"]
 id            = "request-gate"
 name          = "Request gate"
 image         = "ghcr.io/lemonfiber/request-gate"
-digest        = "sha256:27f39cf8c517e784e534062fb790876821102b60e50d9558fd77e2ffb3163ced"
-tag           = "main-e00969c3628e"
+digest        = "sha256:8e1b33fb41c265264a8db20833c1e4cf27286a4204d4567c7f44847da7bab65c"
+tag           = "main-0688d803ca8b"
 listens       = 5057
 health        = { kind = "container" }
 criticality   = "important"
@@ -36,8 +36,8 @@ LEMONFIBER_REQUEST_GATE_PLEX_TV_THROUGH = "http://request-gate-egress:3128"
 id            = "request-gate-egress"
 name          = "Request gate egress"
 image         = "ghcr.io/lemonfiber/request-gate"
-digest        = "sha256:27f39cf8c517e784e534062fb790876821102b60e50d9558fd77e2ffb3163ced"
-tag           = "main-e00969c3628e"
+digest        = "sha256:8e1b33fb41c265264a8db20833c1e4cf27286a4204d4567c7f44847da7bab65c"
+tag           = "main-0688d803ca8b"
 args          = ["egress"]
 listens       = 3128
 health        = { kind = "container" }
